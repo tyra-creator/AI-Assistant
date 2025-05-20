@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Clock } from 'lucide-react';
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const Header: React.FC = () => {
   const [currentTime, setCurrentTime] = React.useState(new Date());
+  const [isAvatarHovered, setIsAvatarHovered] = useState(false);
 
   React.useEffect(() => {
     const timer = setInterval(() => {
@@ -26,13 +28,36 @@ const Header: React.FC = () => {
     day: 'numeric'
   });
 
+  const handleAvatarClick = () => {
+    alert("Hello! I'm your Executive Assistant. How can I help you today?");
+  };
+
   return (
     <header className="w-full py-4 px-6 flex justify-between items-center border-b border-primary/30">
       <div className="flex items-center">
-        <div className="h-8 w-8 bg-accent rounded-full flex items-center justify-center mr-3">
-          <span className="text-white font-bold">A</span>
+        <div 
+          className={`relative cursor-pointer transition-all duration-300 ${isAvatarHovered ? 'scale-110' : ''}`}
+          onClick={handleAvatarClick}
+          onMouseEnter={() => setIsAvatarHovered(true)}
+          onMouseLeave={() => setIsAvatarHovered(false)}
+        >
+          <Avatar className="h-10 w-10 bg-accent">
+            <AvatarFallback className="text-white font-bold">
+              <svg 
+                viewBox="0 0 100 100" 
+                className="h-full w-full p-0.5"
+                fill="currentColor"
+              >
+                <path d="M50,10 C60,10 70,20 70,35 C70,50 60,55 50,55 C40,55 30,50 30,35 C30,20 40,10 50,10 Z" />
+                <path d="M30,60 C30,60 25,62 25,65 C25,68 25,90 25,90 L75,90 C75,90 75,68 75,65 C75,62 70,60 70,60 C70,60 65,57 50,57 C35,57 30,60 30,60 Z" />
+              </svg>
+            </AvatarFallback>
+          </Avatar>
+          {isAvatarHovered && (
+            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-accent rounded-full animate-pulse" />
+          )}
         </div>
-        <h1 className="text-xl font-bold text-foreground">ASSISTANT</h1>
+        <h1 className="text-xl font-bold text-foreground ml-3">ASSISTANT</h1>
       </div>
       <div className="flex items-center text-muted-foreground">
         <Clock className="h-4 w-4 mr-2" />
