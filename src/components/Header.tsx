@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, MessageCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const Header: React.FC = () => {
@@ -41,7 +41,7 @@ const Header: React.FC = () => {
           onMouseEnter={() => setIsAvatarHovered(true)}
           onMouseLeave={() => setIsAvatarHovered(false)}
         >
-          <Avatar className="h-10 w-10 bg-accent">
+          <Avatar className="h-10 w-10 bg-secondary">
             <AvatarFallback className="text-white font-bold">
               <svg 
                 viewBox="0 0 100 100" 
@@ -54,10 +54,12 @@ const Header: React.FC = () => {
             </AvatarFallback>
           </Avatar>
           {isAvatarHovered && (
-            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-accent rounded-full animate-pulse" />
+            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-secondary rounded-full animate-pulse" />
           )}
         </div>
-        <h1 className="text-xl font-bold text-foreground ml-3">ASSISTANT</h1>
+        <h1 className="text-xl font-bold text-foreground ml-3 flex items-center">
+          ASSISTANT
+        </h1>
       </div>
       <div className="flex items-center text-muted-foreground">
         <Clock className="h-4 w-4 mr-2" />
