@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -52,6 +53,14 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				jarvis: {
+					bg: '#0F172A',
+					primary: '#1E3A8A',
+					secondary: '#0F766E',
+					accent: '#F97316',
+					text: '#E2E8F0',
+					'text-muted': '#94A3B8'
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
@@ -84,11 +93,28 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				'pulse-ring': {
+					'0%': {
+						transform: 'scale(0.8)',
+						opacity: '0.8'
+					},
+					'100%': {
+						transform: 'scale(2)',
+						opacity: '0'
+					}
+				},
+				'wave': {
+					'0%': { transform: 'scaleY(0.2)' },
+					'50%': { transform: 'scaleY(1)' },
+					'100%': { transform: 'scaleY(0.2)' }
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-ring': 'pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite',
+				'wave': 'wave 1.2s linear infinite'
 			}
 		}
 	},
