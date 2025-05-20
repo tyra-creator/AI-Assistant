@@ -79,14 +79,14 @@ const Index = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-jarvis-bg text-jarvis-text">
+    <div className="flex flex-col min-h-screen bg-background text-foreground">
       <Header />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
-        <div className="md:w-80 p-6 border-r border-jarvis-primary/30 overflow-y-auto">
+        <div className="md:w-80 p-6 border-r border-primary/30 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
-            <Calendar className="h-5 w-5 mr-2 text-jarvis-accent" />
+            <Calendar className="h-5 w-5 mr-2 text-accent" />
             Upcoming Events
           </h2>
           
@@ -97,7 +97,7 @@ const Index = () => {
               ))}
             </div>
           ) : (
-            <p className="text-jarvis-text-muted text-sm">No upcoming events</p>
+            <p className="text-muted-foreground text-sm">No upcoming events</p>
           )}
         </div>
         
@@ -105,7 +105,7 @@ const Index = () => {
         <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
           <div className="w-full max-w-3xl flex flex-col items-center gap-8">
             <div className="flex items-center space-x-2 mt-6">
-              <div className="bg-jarvis-accent rounded-full p-3">
+              <div className="bg-accent rounded-full p-3">
                 <MessageCircle className="h-8 w-8 text-white" />
               </div>
               <h1 className="text-2xl font-bold">Executive Assistant</h1>
@@ -116,7 +116,7 @@ const Index = () => {
             )}
             
             <div className="mt-auto w-full">
-              <div className="flex items-center gap-2 bg-jarvis-primary/10 p-2 rounded-lg border border-jarvis-secondary/20">
+              <div className="flex items-center gap-2 bg-primary/10 p-2 rounded-lg border border-secondary/20">
                 <WaveCircle isActive={isListening || isSpeaking} />
                 <TextInput onSubmit={handleTextSubmit} />
                 <VoiceButton isListening={isListening} onClick={toggleListening} />
