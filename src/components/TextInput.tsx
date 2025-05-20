@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TextInputProps {
   onSubmit: (text: string) => void;
@@ -20,17 +19,17 @@ const TextInput: React.FC<TextInputProps> = ({ onSubmit }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-2xl gap-2">
-      <Input
+    <form onSubmit={handleSubmit} className="flex-1 flex items-center">
+      <input
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
         placeholder="Type your message..."
-        className="flex-1 bg-jarvis-primary/20 border-jarvis-secondary/30 text-jarvis-text placeholder:text-jarvis-text-muted"
+        className="w-full bg-transparent border-none outline-none text-jarvis-text placeholder:text-jarvis-text-muted"
       />
       <Button 
         type="submit" 
         size="icon"
-        className="bg-jarvis-secondary hover:bg-jarvis-secondary/90"
+        className="bg-jarvis-secondary hover:bg-jarvis-secondary/90 ml-2"
       >
         <Send className="h-5 w-5" />
       </Button>

@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Calendar } from 'lucide-react';
+import { Calendar, MessageCircle } from 'lucide-react';
 import Header from '@/components/Header';
 import WaveCircle from '@/components/WaveCircle';
 import VoiceButton from '@/components/VoiceButton';
@@ -82,20 +83,8 @@ const Index = () => {
       <Header />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
-          <div className="w-full max-w-3xl flex flex-col items-center gap-8">
-            <WaveCircle isActive={isListening || isSpeaking} />
-            
-            <ResponseCard message={activeMessage} isSpeaking={isSpeaking} />
-            
-            <div className="flex flex-col items-center gap-6 mt-auto pb-8">
-              <TextInput onSubmit={handleTextSubmit} />
-              <VoiceButton isListening={isListening} onClick={toggleListening} />
-            </div>
-          </div>
-        </div>
-        
-        <div className="md:w-80 p-6 border-t md:border-t-0 md:border-l border-jarvis-primary/30 overflow-y-auto">
+        {/* Sidebar */}
+        <div className="md:w-80 p-6 border-r border-jarvis-primary/30 overflow-y-auto">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
             <Calendar className="h-5 w-5 mr-2 text-jarvis-accent" />
             Upcoming Events
@@ -110,6 +99,30 @@ const Index = () => {
           ) : (
             <p className="text-jarvis-text-muted text-sm">No upcoming events</p>
           )}
+        </div>
+        
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
+          <div className="w-full max-w-3xl flex flex-col items-center gap-8">
+            <div className="flex items-center space-x-2 mt-6">
+              <div className="bg-jarvis-accent rounded-full p-3">
+                <MessageCircle className="h-8 w-8 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold">Executive Assistant</h1>
+            </div>
+            
+            {activeMessage && (
+              <ResponseCard message={activeMessage} isSpeaking={isSpeaking} />
+            )}
+            
+            <div className="mt-auto w-full">
+              <div className="flex items-center gap-2 bg-jarvis-primary/10 p-2 rounded-lg border border-jarvis-secondary/20">
+                <WaveCircle isActive={isListening || isSpeaking} />
+                <TextInput onSubmit={handleTextSubmit} />
+                <VoiceButton isListening={isListening} onClick={toggleListening} />
+              </div>
+            </div>
+          </div>
         </div>
       </main>
     </div>
