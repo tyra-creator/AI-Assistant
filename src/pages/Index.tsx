@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Calendar, MessageCircle } from 'lucide-react';
 import Header from '@/components/Header';
@@ -120,9 +119,7 @@ const Index = () => {
                 onMouseLeave={() => setIsTitleHovered(false)}
               >
                 Executive Assistant
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent overflow-hidden">
-                  <span className="absolute inset-0 w-[200%] h-full bg-accent animate-marquee"></span>
-                </span>
+                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent shadow-glow"></span>
               </h1>
             </div>
             

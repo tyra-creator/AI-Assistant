@@ -99,3 +99,7 @@
   animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
   animation-delay: 0.5s;
 }
+
+.shadow-glow {
+  box-shadow: 0 0 8px 1px rgb(14, 165, 233), 0 0 4px rgb(14, 165, 233);
+}
