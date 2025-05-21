@@ -23,7 +23,7 @@
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 24 94% 53%;
+    --accent: 196 100% 50%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 84% 60%;
@@ -49,7 +49,7 @@
 }
 
 .voice-bar {
-  @apply bg-jarvis-accent h-full w-1.5 rounded-full mx-0.5 transform origin-bottom;
+  @apply bg-accent h-full w-1.5 rounded-full mx-0.5 transform origin-bottom;
   animation: wave 1.2s linear infinite;
 }
 
