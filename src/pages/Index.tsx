@@ -13,6 +13,7 @@ const Index = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeMessage, setActiveMessage] = useState("");
   const [notifications, setNotifications] = useState<EventNotification[]>([]);
+  const [isTitleHovered, setIsTitleHovered] = useState(false);
 
   // Sample data - in a real app, this would come from Google Calendar API
   useEffect(() => {
@@ -78,6 +79,11 @@ const Index = () => {
     processUserInput(text);
   };
 
+  const handleTitleClick = () => {
+    setActiveMessage("Hello! I'm your Executive Assistant. How can I help you today?");
+    speakResponse("Hello! I'm your Executive Assistant. How can I help you today?");
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <Header />
@@ -104,11 +110,20 @@ const Index = () => {
         {/* Main content area */}
         <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
           <div className="w-full max-w-3xl flex flex-col items-center gap-8">
-            <div className="flex items-center space-x-2 mt-6">
-              <div className="bg-accent rounded-full p-3">
-                <MessageCircle className="h-8 w-8 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold">Executive Assistant</h1>
+            <div className="flex items-center mt-6">
+              <h1 
+                className={`text-2xl font-bold cursor-pointer relative transition-all duration-300 ${
+                  isTitleHovered ? 'text-accent' : 'text-foreground'
+                }`}
+                onClick={handleTitleClick}
+                onMouseEnter={() => setIsTitleHovered(true)}
+                onMouseLeave={() => setIsTitleHovered(false)}
+              >
+                Executive Assistant
+                {isTitleHovered && (
+                  <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent transform-gpu animate-pulse-ring"></span>
+                )}
+              </h1>
             </div>
             
             {activeMessage && (
