@@ -120,9 +120,9 @@ const Index = () => {
                 onMouseLeave={() => setIsTitleHovered(false)}
               >
                 Executive Assistant
-                {isTitleHovered && (
-                  <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent transform-gpu animate-pulse-ring"></span>
-                )}
+                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent overflow-hidden">
+                  <span className="absolute inset-0 w-[200%] h-full bg-accent animate-marquee"></span>
+                </span>
               </h1>
             </div>
             

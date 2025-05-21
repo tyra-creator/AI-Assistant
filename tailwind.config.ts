@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -107,13 +108,18 @@ export default {
 					'0%': { transform: 'scaleY(0.2)' },
 					'50%': { transform: 'scaleY(1)' },
 					'100%': { transform: 'scaleY(0.2)' }
+				},
+				'marquee': {
+					'0%': { transform: 'translateX(-50%)' },
+					'100%': { transform: 'translateX(0%)' }
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'pulse-ring': 'pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite',
-				'wave': 'wave 1.2s linear infinite'
+				'wave': 'wave 1.2s linear infinite',
+				'marquee': 'marquee 2s linear infinite'
 			}
 		}
 	},
