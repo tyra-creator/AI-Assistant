@@ -15,6 +15,7 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive }) => {
           key={bar} 
           className={`voice-bar ${isActive ? 'animate-wave' : 'h-2'}`}
           style={{ 
+            animationDelay: `${bar * 0.1}s`,
             animationPlayState: isActive ? 'running' : 'paused',
             height: isActive ? undefined : '8px'
           }}

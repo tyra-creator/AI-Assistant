@@ -2,6 +2,7 @@
 import React from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SpeechService } from '@/services/SpeechService';
 
 interface VoiceButtonProps {
   isListening: boolean;
@@ -24,6 +25,8 @@ const VoiceButton: React.FC<VoiceButtonProps> = ({
           : "bg-jarvis-secondary text-white hover:bg-jarvis-secondary/90",
         className
       )}
+      aria-label={isListening ? "Stop listening" : "Start listening"}
+      title={isListening ? "Stop listening" : "Start listening"}
     >
       {isListening ? (
         <>

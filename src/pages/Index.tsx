@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Calendar, MessageCircle, RefreshCw } from 'lucide-react';
 import Header from '@/components/Header';
@@ -9,6 +8,7 @@ import ResponseCard from '@/components/ResponseCard';
 import NotificationCard, { EventNotification } from '@/components/NotificationCard';
 import { DialogflowService } from '@/services/DialogflowService';
 import { APIService } from '@/services/APIService';
+import { SpeechService } from '@/services/SpeechService';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 
@@ -46,17 +46,37 @@ const Index = () => {
     ];
     
     setNotifications(sampleNotifications);
+    
+    // Initialize speech services
+    SpeechService.initialize();
   }, []);
 
   const toggleListening = () => {
-    setIsListening(!isListening);
-    
-    // Simulate voice recognition result after 2 seconds when starting to listen
-    if (!isListening) {
-      setTimeout(() => {
-        processUserInput("What's my schedule for today?");
-        setIsListening(false);
-      }, 2000);
+    if (isListening) {
+      SpeechService.stopListening();
+      setIsListening(false);
+    } else {
+      const success = SpeechService.startListening(
+        (text) => {
+          // Process the recognized speech
+          processUserInput(text);
+        },
+        () => {
+          // Called when speech recognition ends
+          setIsListening(false);
+        }
+      );
+
+      if (success) {
+        setIsListening(true);
+        setActiveMessage("I'm listening...");
+      } else {
+        toast({
+          title: "Speech Recognition Error",
+          description: "Could not start speech recognition. Try again or use text input.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -92,12 +112,9 @@ const Index = () => {
   const speakResponse = (text: string) => {
     setIsSpeaking(true);
     
-    // Simulate speech duration based on text length
-    const speakingDuration = Math.max(2000, text.length * 80);
-    
-    setTimeout(() => {
+    SpeechService.speak(text, () => {
       setIsSpeaking(false);
-    }, speakingDuration);
+    });
   };
 
   const handleTextSubmit = (text: string) => {
@@ -113,11 +130,19 @@ const Index = () => {
     APIService.resetSession();
     setConversationHistory([]);
     setActiveMessage("");
+    SpeechService.stopSpeaking(); // Stop any ongoing speech
     toast({
       title: "Conversation Reset",
       description: "Started a new conversation session.",
     });
   };
+
+  // Stop speaking when component unmounts
+  useEffect(() => {
+    return () => {
+      SpeechService.stopSpeaking();
+    };
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">

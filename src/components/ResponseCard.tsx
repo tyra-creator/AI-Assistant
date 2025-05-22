@@ -14,7 +14,7 @@ const ResponseCard: React.FC<ResponseCardProps> = ({ message, isSpeaking }) => {
       <CardContent className="p-6">
         <div className="flex flex-col items-center">
           <VoiceVisualizer isActive={isSpeaking} />
-          <div className="mt-4 text-jarvis-text text-lg">
+          <div className={`mt-4 text-jarvis-text text-lg ${isSpeaking ? 'text-accent' : ''}`}>
             {message || "I'm waiting for your command..."}
           </div>
         </div>
