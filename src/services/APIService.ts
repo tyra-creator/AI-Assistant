@@ -2,8 +2,7 @@
 // Generic service for handling API requests
 export class APIService {
   // Base URL for your backend proxy server
-  // In production, replace this with your actual backend URL
-  private static baseURL = 'https://your-backend-proxy.com/api';
+  private static baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
   
   // Session ID management - in a real app, this would be persisted
   private static sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
@@ -36,7 +35,8 @@ export class APIService {
       });
       
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API error: ${response.status} - ${errorData.error || 'Unknown error'}`);
       }
       
       return await response.json();
