@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Calendar, MessageCircle } from 'lucide-react';
 import Header from '@/components/Header';
@@ -6,6 +7,8 @@ import VoiceButton from '@/components/VoiceButton';
 import TextInput from '@/components/TextInput';
 import ResponseCard from '@/components/ResponseCard';
 import NotificationCard, { EventNotification } from '@/components/NotificationCard';
+import { DialogflowService } from '@/services/DialogflowService';
+import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -13,6 +16,8 @@ const Index = () => {
   const [activeMessage, setActiveMessage] = useState("");
   const [notifications, setNotifications] = useState<EventNotification[]>([]);
   const [isTitleHovered, setIsTitleHovered] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const { toast } = useToast();
 
   // Sample data - in a real app, this would come from Google Calendar API
   useEffect(() => {
@@ -52,15 +57,26 @@ const Index = () => {
     }
   };
 
-  const processUserInput = (text: string) => {
+  const processUserInput = async (text: string) => {
     setActiveMessage(`Processing: "${text}"`);
+    setIsProcessing(true);
     
-    // Simulate AI response after 1 second
-    setTimeout(() => {
-      const response = "You have a team meeting at 2:00 PM today and a project deadline tomorrow at 6:00 PM.";
+    try {
+      // Send the message to Dialogflow and get the response
+      const response = await DialogflowService.sendMessage(text);
       setActiveMessage(response);
       speakResponse(response);
-    }, 1000);
+    } catch (error) {
+      console.error('Error processing request:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process your request. Please try again.",
+        variant: "destructive",
+      });
+      setActiveMessage("Sorry, I couldn't process your request at this time.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const speakResponse = (text: string) => {
@@ -79,8 +95,7 @@ const Index = () => {
   };
 
   const handleTitleClick = () => {
-    setActiveMessage("Hello! I'm your Executive Assistant. How can I help you today?");
-    speakResponse("Hello! I'm your Executive Assistant. How can I help you today?");
+    processUserInput("Hello");
   };
 
   return (
@@ -133,6 +148,11 @@ const Index = () => {
                 <TextInput onSubmit={handleTextSubmit} />
                 <VoiceButton isListening={isListening} onClick={toggleListening} />
               </div>
+              {isProcessing && (
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Connecting to Dialogflow (executiveassistant-thyy)...
+                </p>
+              )}
             </div>
           </div>
         </div>
