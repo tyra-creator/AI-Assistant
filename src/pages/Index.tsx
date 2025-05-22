@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, MessageCircle } from 'lucide-react';
+import { Calendar, MessageCircle, RefreshCw } from 'lucide-react';
 import Header from '@/components/Header';
 import WaveCircle from '@/components/WaveCircle';
 import VoiceButton from '@/components/VoiceButton';
@@ -8,7 +8,9 @@ import TextInput from '@/components/TextInput';
 import ResponseCard from '@/components/ResponseCard';
 import NotificationCard, { EventNotification } from '@/components/NotificationCard';
 import { DialogflowService } from '@/services/DialogflowService';
+import { APIService } from '@/services/APIService';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -17,6 +19,7 @@ const Index = () => {
   const [notifications, setNotifications] = useState<EventNotification[]>([]);
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
   const { toast } = useToast();
 
   // Sample data - in a real app, this would come from Google Calendar API
@@ -62,9 +65,16 @@ const Index = () => {
     setIsProcessing(true);
     
     try {
+      // Add user message to conversation history
+      setConversationHistory(prev => [...prev, { role: 'user', content: text }]);
+      
       // Send the message to Dialogflow and get the response
       const response = await DialogflowService.sendMessage(text);
       setActiveMessage(response);
+      
+      // Add assistant response to conversation history
+      setConversationHistory(prev => [...prev, { role: 'assistant', content: response }]);
+      
       speakResponse(response);
     } catch (error) {
       console.error('Error processing request:', error);
@@ -98,6 +108,17 @@ const Index = () => {
     processUserInput("Hello");
   };
 
+  const resetConversation = () => {
+    // Reset session ID to start a new conversation
+    APIService.resetSession();
+    setConversationHistory([]);
+    setActiveMessage("");
+    toast({
+      title: "Conversation Reset",
+      description: "Started a new conversation session.",
+    });
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <Header />
@@ -124,7 +145,7 @@ const Index = () => {
         {/* Main content area */}
         <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
           <div className="w-full max-w-3xl flex flex-col items-center gap-8">
-            <div className="flex items-center mt-6">
+            <div className="flex items-center mt-6 justify-between w-full">
               <h1 
                 className={`text-2xl font-bold cursor-pointer relative transition-all duration-300 ${
                   isTitleHovered ? 'text-accent' : 'text-foreground'
@@ -136,6 +157,16 @@ const Index = () => {
                 Executive Assistant
                 <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent shadow-glow"></span>
               </h1>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={resetConversation}
+                className="flex items-center gap-1"
+              >
+                <RefreshCw className="h-4 w-4" />
+                New Conversation
+              </Button>
             </div>
             
             {activeMessage && (
