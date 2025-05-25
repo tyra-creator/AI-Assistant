@@ -1,4 +1,3 @@
-
 // TypeScript definitions for the Web Speech API
 declare global {
   interface Window {
@@ -52,6 +51,7 @@ export class SpeechService {
   private static isListening = false;
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
+  private static selectedVoice: SpeechSynthesisVoice | null = null;
 
   /**
    * Initialize the speech recognition service
@@ -161,6 +161,29 @@ export class SpeechService {
   }
 
   /**
+   * Pre-load and select the best female voice to reduce delay
+   */
+  private static selectOptimalVoice(): SpeechSynthesisVoice | null {
+    if (this.selectedVoice) {
+      return this.selectedVoice;
+    }
+
+    const voices = window.speechSynthesis.getVoices();
+    
+    // Try to find a female voice
+    this.selectedVoice = voices.find(voice => 
+      voice.lang.startsWith('en') && 
+      (voice.name.toLowerCase().includes('female') || 
+       voice.name.toLowerCase().includes('woman') ||
+       voice.name.toLowerCase().includes('samantha') ||
+       voice.name.toLowerCase().includes('victoria') ||
+       voice.name.toLowerCase().includes('karen'))
+    ) || null;
+
+    return this.selectedVoice;
+  }
+
+  /**
    * Speak text using the browser's text-to-speech capabilities
    */
   static speak(text: string, onEnd?: () => void): void {
@@ -170,31 +193,22 @@ export class SpeechService {
       return;
     }
 
-    // Cancel any ongoing speech
+    // Cancel any ongoing speech immediately
     window.speechSynthesis.cancel();
 
-    // Create a new utterance
+    // Create utterance immediately
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Configure the utterance for female voice and faster speed
+    // Configure the utterance for female voice and comfortable speed
     utterance.lang = 'en-US';
-    utterance.rate = 1.1; // Reduced from 1.3 to 1.1 for more comfortable speed
-    utterance.pitch = 1.2; // Slightly higher pitch for more feminine sound
+    utterance.rate = 1.1;
+    utterance.pitch = 1.2;
     utterance.volume = 1.0;
 
-    // Try to select a female voice
-    const voices = window.speechSynthesis.getVoices();
-    const femaleVoice = voices.find(voice => 
-      voice.lang.startsWith('en') && 
-      (voice.name.toLowerCase().includes('female') || 
-       voice.name.toLowerCase().includes('woman') ||
-       voice.name.toLowerCase().includes('samantha') ||
-       voice.name.toLowerCase().includes('victoria') ||
-       voice.name.toLowerCase().includes('karen'))
-    );
-    
-    if (femaleVoice) {
-      utterance.voice = femaleVoice;
+    // Use pre-selected voice if available
+    const selectedVoice = this.selectOptimalVoice();
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
 
     // Set the end callback if provided
@@ -204,7 +218,7 @@ export class SpeechService {
       };
     }
 
-    // Speak the text
+    // Speak immediately without delay
     window.speechSynthesis.speak(utterance);
   }
 
