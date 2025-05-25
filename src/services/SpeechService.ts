@@ -178,7 +178,7 @@ export class SpeechService {
     
     // Configure the utterance for female voice and faster speed
     utterance.lang = 'en-US';
-    utterance.rate = 1.3; // Increased from 1.0 to 1.3 for faster speech
+    utterance.rate = 1.1; // Reduced from 1.3 to 1.1 for more comfortable speed
     utterance.pitch = 1.2; // Slightly higher pitch for more feminine sound
     utterance.volume = 1.0;
 
