@@ -1,80 +1,95 @@
 
-import { APIService } from './APIService';
-
 interface DialogflowResponse {
   responseText: string;
   isFinal: boolean;
 }
 
+interface WebhookResponse {
+  fulfillmentText?: string;
+  fulfillmentMessages?: Array<{
+    text?: {
+      text?: string[];
+    };
+    platform?: string;
+  }>;
+  queryResult?: {
+    fulfillmentText?: string;
+    fulfillmentMessages?: Array<{
+      text?: {
+        text?: string[];
+      };
+    }>;
+  };
+}
+
 export class DialogflowService {
-  private static projectId = 'executiveassistant-thyy';
-  private static baseUrl = 'https://dialogflow.googleapis.com/v2/projects';
+  private static webhookUrl = 'https://dialogflow-twilio-771370131463.us-central1.run.app';
   
   /**
-   * Sends a text message to Dialogflow and returns the response
+   * Sends a text message to Dialogflow webhook and returns the response
    */
   static async sendMessage(message: string): Promise<string> {
     try {
-      console.log(`Sending message to Dialogflow: ${message}`);
+      console.log(`Sending message to Dialogflow webhook: ${message}`);
       
-      // Check if we're in development mode (no backend available)
-      if (import.meta.env.DEV && !import.meta.env.VITE_USE_BACKEND) {
-        return this.getSimulatedResponse(message);
+      // Create a unique session ID for this conversation
+      const sessionId = this.generateSessionId();
+      
+      const response = await fetch(this.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          session: sessionId,
+          queryInput: {
+            text: {
+              text: message,
+              languageCode: 'en-US'
+            }
+          }
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      // In production, use the backend proxy
-      try {
-        const data = await APIService.post<DialogflowResponse>('/dialogflow', {
-          message,
-          sessionId: APIService.getSessionId(),
-          projectId: this.projectId
-        });
-        
-        return data.responseText;
-      } catch (error) {
-        console.error('Error communicating with Dialogflow:', error);
-        return "Sorry, I encountered an error while processing your request. Please try again.";
+      const data: WebhookResponse = await response.json();
+      console.log('Received response from Dialogflow:', data);
+      
+      // Extract the response text from various possible response formats
+      let responseText = '';
+      
+      if (data.fulfillmentText) {
+        responseText = data.fulfillmentText;
+      } else if (data.queryResult?.fulfillmentText) {
+        responseText = data.queryResult.fulfillmentText;
+      } else if (data.fulfillmentMessages && data.fulfillmentMessages.length > 0) {
+        const textMessage = data.fulfillmentMessages.find(msg => msg.text);
+        if (textMessage?.text?.text && textMessage.text.text.length > 0) {
+          responseText = textMessage.text.text[0];
+        }
+      } else if (data.queryResult?.fulfillmentMessages && data.queryResult.fulfillmentMessages.length > 0) {
+        const textMessage = data.queryResult.fulfillmentMessages.find(msg => msg.text);
+        if (textMessage?.text?.text && textMessage.text.text.length > 0) {
+          responseText = textMessage.text.text[0];
+        }
       }
+      
+      return responseText || "I received your message but couldn't generate a response.";
+      
     } catch (error) {
-      console.error('Error in DialogflowService:', error);
+      console.error('Error communicating with Dialogflow webhook:', error);
       return "Sorry, I encountered an error while processing your request. Please try again.";
     }
   }
 
   /**
-   * Returns a simulated response for development mode
-   * This allows testing without a backend
+   * Generate a unique session ID for the conversation
    */
-  private static getSimulatedResponse(message: string): string {
-    // Simulate network delay
-    setTimeout(() => {}, 500);
-    
-    // Simulated responses for testing
-    const simulatedResponses: Record<string, string> = {
-      "hello": "Hello! I'm your Executive Assistant powered by Dialogflow. How can I help you today?",
-      "hi": "Hi there! I'm your Executive Assistant powered by Dialogflow. How can I help you today?",
-      "what can you do": "As your Executive Assistant, I can help you manage your schedule, check upcoming events, set reminders, and more. Just ask!",
-      "what's my schedule": "Based on your calendar, you have a team meeting at 2:00 PM today and a project deadline tomorrow at 6:00 PM.",
-      "what's my schedule for today": "Today you have a team meeting at 2:00 PM about weekly progress updates.",
-      "help": "I can help you manage your schedule, check upcoming events, answer questions, and more. Try asking 'What's my schedule for today?' or 'Do I have any meetings tomorrow?'"
-    };
-    
-    // Default response if no match is found
-    let responseText = "I'm processing your request. In a full implementation, this would connect to the Dialogflow API with project ID: executiveassistant-thyy";
-    
-    // Check for whole message match
-    if (simulatedResponses[message.toLowerCase()]) {
-      responseText = simulatedResponses[message.toLowerCase()];
-    } else {
-      // Check for partial matches
-      for (const key of Object.keys(simulatedResponses)) {
-        if (message.toLowerCase().includes(key)) {
-          responseText = simulatedResponses[key];
-          break;
-        }
-      }
-    }
-    
-    return responseText;
+  private static generateSessionId(): string {
+    return `web-session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 }
