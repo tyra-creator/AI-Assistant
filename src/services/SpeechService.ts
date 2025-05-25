@@ -22,19 +22,19 @@ declare global {
   }
 
   interface SpeechRecognitionResultList {
-    [index: number]: SpeechRecognitionResult;
-    length: number;
+    readonly [index: number]: SpeechRecognitionResult;
+    readonly length: number;
   }
 
   interface SpeechRecognitionResult {
-    [index: number]: SpeechRecognitionAlternative;
-    isFinal: boolean;
-    length: number;
+    readonly [index: number]: SpeechRecognitionAlternative;
+    readonly isFinal: boolean;
+    readonly length: number;
   }
 
   interface SpeechRecognitionAlternative {
-    transcript: string;
-    confidence: number;
+    readonly transcript: string;
+    readonly confidence: number;
   }
 
   interface SpeechRecognitionErrorEvent {
@@ -176,11 +176,26 @@ export class SpeechService {
     // Create a new utterance
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Configure the utterance
+    // Configure the utterance for female voice and faster speed
     utterance.lang = 'en-US';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+    utterance.rate = 1.3; // Increased from 1.0 to 1.3 for faster speech
+    utterance.pitch = 1.2; // Slightly higher pitch for more feminine sound
     utterance.volume = 1.0;
+
+    // Try to select a female voice
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find(voice => 
+      voice.lang.startsWith('en') && 
+      (voice.name.toLowerCase().includes('female') || 
+       voice.name.toLowerCase().includes('woman') ||
+       voice.name.toLowerCase().includes('samantha') ||
+       voice.name.toLowerCase().includes('victoria') ||
+       voice.name.toLowerCase().includes('karen'))
+    );
+    
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    }
 
     // Set the end callback if provided
     if (onEnd) {
