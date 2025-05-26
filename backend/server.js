@@ -25,16 +25,22 @@ app.get('/health', (req, res) => {
 // Dialogflow API endpoint
 app.post('/api/dialogflow', async (req, res) => {
   try {
-    const { message, sessionId, projectId } = req.body;
+    const { message, sessionId } = req.body;
     
     if (!message || !sessionId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // Create a new session
-    const sessionClient = new dialogflow.SessionsClient();
+    console.log(`Processing message: ${message} for session: ${sessionId}`);
+
+    // Create a new session client with explicit credentials
+    const sessionClient = new dialogflow.SessionsClient({
+      keyFilename: './google-credentials.json',
+      projectId: 'executiveassistant-thyy'
+    });
+    
     const sessionPath = sessionClient.projectAgentSessionPath(
-      projectId || process.env.DIALOGFLOW_PROJECT_ID,
+      'executiveassistant-thyy',
       sessionId
     );
 
@@ -49,9 +55,13 @@ app.post('/api/dialogflow', async (req, res) => {
       },
     };
 
+    console.log('Sending request to Dialogflow:', request);
+
     // Send request to Dialogflow
     const responses = await sessionClient.detectIntent(request);
     const result = responses[0].queryResult;
+    
+    console.log('Dialogflow response:', result);
     
     // Return the response to the client
     return res.status(200).json({
@@ -73,5 +83,5 @@ app.post('/api/dialogflow', async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Dialogflow project ID: ${process.env.DIALOGFLOW_PROJECT_ID || 'Not set'}`);
+  console.log(`Using Dialogflow project: executiveassistant-thyy`);
 });
