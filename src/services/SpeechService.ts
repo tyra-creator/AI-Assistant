@@ -52,6 +52,7 @@ export class SpeechService {
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
   private static selectedVoice: SpeechSynthesisVoice | null = null;
+  private static voices: SpeechSynthesisVoice[] = [];
 
   /**
    * Initialize the speech recognition service
@@ -62,6 +63,10 @@ export class SpeechService {
       console.error('Speech recognition not supported in this browser');
       return false;
     }
+
+    // Load voices and listen for changes
+    this.loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', this.loadVoices);
 
     try {
       // Initialize the SpeechRecognition object
@@ -105,6 +110,21 @@ export class SpeechService {
     } catch (error) {
       console.error('Error initializing speech recognition:', error);
       return false;
+    }
+  }
+
+  private static loadVoices() {
+    this.voices = window.speechSynthesis.getVoices();
+
+    // Prioritize specific female voice names
+    const preferredVoices = ['Samantha', 'Victoria', 'Karen', 'Google UK English Female', 'Google US English Female'];
+    this.selectedVoice = this.voices.find(voice => 
+      preferredVoices.some(preferred => voice.name.includes(preferred))
+    ) || null;
+
+    // Fallback to any voice with 'female' in the name if no preferred voice is found
+    if (!this.selectedVoice) {
+      this.selectedVoice = this.voices.find(voice => voice.name.toLowerCase().includes('female')) || null;
     }
   }
 
@@ -186,39 +206,18 @@ export class SpeechService {
   /**
    * Speak text using the browser's text-to-speech capabilities
    */
-  static speak(text: string, onEnd?: () => void): void {
-    if (!('speechSynthesis' in window)) {
-      console.error('Text to speech not supported in this browser');
-      if (onEnd) onEnd();
-      return;
-    }
-
-    // Cancel any ongoing speech immediately
-    window.speechSynthesis.cancel();
-
-    // Create utterance immediately
+  static speak(text: string, onEnd?: () => void) {
     const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Configure the utterance for female voice and comfortable speed
-    utterance.lang = 'en-US';
-    utterance.rate = 1.1;
-    utterance.pitch = 1.2;
-    utterance.volume = 1.0;
 
-    // Use pre-selected voice if available
-    const selectedVoice = this.selectOptimalVoice();
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    // Ensure the selected voice is set
+    if (this.selectedVoice) {
+      utterance.voice = this.selectedVoice;
     }
 
-    // Set the end callback if provided
-    if (onEnd) {
-      utterance.onend = () => {
-        onEnd();
-      };
-    }
+    utterance.onend = () => {
+      if (onEnd) onEnd();
+    };
 
-    // Speak immediately without delay
     window.speechSynthesis.speak(utterance);
   }
 

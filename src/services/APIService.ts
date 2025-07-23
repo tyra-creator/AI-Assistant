@@ -1,9 +1,5 @@
-
 // Generic service for handling API requests
 export class APIService {
-  // Base URL for your backend proxy server
-  private static baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-  
   // Session ID management - in a real app, this would be persisted
   private static sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   
@@ -26,7 +22,7 @@ export class APIService {
    */
   static async post<T>(endpoint: string, data: any): Promise<T> {
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -45,4 +41,34 @@ export class APIService {
       throw error;
     }
   }
+
+  /**
+   * Fetch calendar events from the backend
+   */
+  static async fetchCalendarEvents() {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/calendar/events`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch calendar events');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      throw error;
+    }
+  }
 }
+
+// Export the fetchCalendarEvents function for use in other modules
+export const fetchCalendarEvents = async () => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/calendar/events`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch calendar events');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    throw error;
+  }
+};

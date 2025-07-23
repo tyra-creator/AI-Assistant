@@ -11,6 +11,7 @@ import { APIService } from '@/services/APIService';
 import { SpeechService } from '@/services/SpeechService';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { fetchCalendarEvents } from '@/services/APIService';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -20,33 +21,28 @@ const Index = () => {
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
+  const [events, setEvents] = useState([]);
+  const [error, setError] = useState(null);
   const { toast } = useToast();
 
-  // Sample data - in a real app, this would come from Google Calendar API
   useEffect(() => {
-    const sampleNotifications: EventNotification[] = [
-      {
-        id: '1',
-        title: 'Team Meeting',
-        datetime: '2025-05-20T14:00:00',
-        description: 'Weekly progress update with the development team'
-      },
-      {
-        id: '2',
-        title: 'Project Deadline',
-        datetime: '2025-05-21T18:00:00',
-        description: 'Final submission for the Q2 project'
-      },
-      {
-        id: '3',
-        title: 'Doctor Appointment',
-        datetime: '2025-05-23T10:30:00',
-        description: 'Annual health checkup'
+    const getEvents = async () => {
+      try {
+        const data = await fetchCalendarEvents();
+        const calendarEvents = data.events.map((event) => ({
+          id: event.id,
+          title: event.summary,
+          datetime: event.start.dateTime || event.start.date,
+          description: event.description || 'No description available',
+        }));
+        setNotifications(calendarEvents);
+      } catch (err) {
+        setError(err.message);
       }
-    ];
-    
-    setNotifications(sampleNotifications);
-    
+    };
+
+    getEvents();
+
     // Initialize speech services
     SpeechService.initialize();
   }, []);
@@ -137,6 +133,24 @@ const Index = () => {
     });
   };
 
+  const refreshEvents = async () => {
+    setIsProcessing(true);
+    try {
+      const data = await fetchCalendarEvents();
+      const calendarEvents = data.events.map((event) => ({
+        id: event.id,
+        title: event.summary,
+        datetime: event.start.dateTime || event.start.date,
+        description: event.description || 'No description available',
+      }));
+      setNotifications(calendarEvents);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Stop speaking when component unmounts
   useEffect(() => {
     return () => {
@@ -147,15 +161,25 @@ const Index = () => {
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <Header />
-      
+
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
         <div className="md:w-80 p-6 border-r border-primary/30 overflow-y-auto">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
-            <Calendar className="h-5 w-5 mr-2 text-accent" />
-            Upcoming Events
-          </h2>
-          
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center">
+              <Calendar className="h-5 w-5 mr-2 text-accent" />
+              Upcoming Events
+            </h2>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={refreshEvents}
+              className="flex items-center gap-1"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+
           {notifications.length > 0 ? (
             <div className="space-y-3">
               {notifications.map((notification) => (
@@ -166,7 +190,7 @@ const Index = () => {
             <p className="text-muted-foreground text-sm">No upcoming events</p>
           )}
         </div>
-        
+
         {/* Main content area */}
         <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
           <div className="w-full max-w-3xl flex flex-col items-center gap-8">
@@ -182,7 +206,7 @@ const Index = () => {
                 Executive Assistant
                 <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent shadow-glow"></span>
               </h1>
-              
+
               <Button 
                 variant="outline" 
                 size="sm"
@@ -193,11 +217,11 @@ const Index = () => {
                 New Conversation
               </Button>
             </div>
-            
+
             {activeMessage && (
               <ResponseCard message={activeMessage} isSpeaking={isSpeaking} />
             )}
-            
+
             <div className="mt-auto w-full">
               <div className="flex items-center gap-2 bg-primary/10 p-2 rounded-lg border border-secondary/20">
                 <WaveCircle isActive={isListening || isSpeaking} />
