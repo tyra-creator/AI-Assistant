@@ -57,9 +57,14 @@ const Header: React.FC = () => {
             <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-secondary rounded-full animate-pulse" />
           )}
         </div>
-        <h1 className="text-xl font-bold text-foreground ml-3 flex items-center">
-          ASSISTANT
-        </h1>
+        <div className="ml-3 flex items-center space-x-2">
+          <img 
+            src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+            alt="VirtuAI Assistant Icon" 
+            className="h-6 w-6"
+          />
+          <h1 className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</h1>
+        </div>
       </div>
       <div className="flex items-center text-muted-foreground">
         <Clock className="h-4 w-4 mr-2" />

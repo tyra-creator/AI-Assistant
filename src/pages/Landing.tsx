@@ -11,11 +11,11 @@ export default function Landing() {
         <nav className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <img 
-              src="/lovable-uploads/036bc610-6577-4d05-b8c9-6c1694626c8c.png" 
-              alt="VirtuAI Assistant" 
-              className="h-10 w-auto"
+              src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+              alt="VirtuAI Assistant Icon" 
+              className="h-10 w-10"
             />
-            <span className="text-xl font-bold text-foreground">VirtuAI Assistant</span>
+            <span className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</span>
           </div>
           <div className="hidden md:flex items-center space-x-8">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</a>
@@ -32,14 +32,13 @@ export default function Landing() {
       {/* Hero Section */}
       <section className="container mx-auto px-6 py-20">
         <div className="text-center max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl font-bold text-foreground mb-6 leading-tight">
-            Save 4 hours per person
+          <h1 className="text-5xl md:text-7xl font-montserrat font-bold text-foreground mb-6 leading-tight">
+            Your AI Executive Partner
             <br />
-            <span className="text-primary">every single week</span>
+            <span className="text-primary">Effortless Email. Smarter Schedules.</span>
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto leading-relaxed">
-            VirtuAI Assistant is the most intelligent AI executive partner ever created. 
-            Collaborate faster and achieve more with AI-native productivity tools.
+            AI that Handles Your Day—Before You Even Start It. Transform your productivity with intelligent automation and seamless collaboration.
           </p>
           <Link to="/signup">
             <Button size="lg" className="text-lg px-8 py-6 rounded-full">
@@ -72,11 +71,11 @@ export default function Landing() {
       {/* Features Section */}
       <section id="features" className="container mx-auto px-6 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-foreground mb-4">
-            Your AI Executive Partner
+          <h2 className="text-4xl font-montserrat font-bold text-foreground mb-4">
+            Intelligent Automation at Your Service
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Experience the future of productivity with intelligent automation and seamless collaboration.
+            Experience enterprise-grade AI that learns your workflow and optimizes every interaction.
           </p>
         </div>
 
@@ -85,23 +84,23 @@ export default function Landing() {
             <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
               <Zap className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Lightning Fast</h3>
+            <h3 className="text-xl font-montserrat font-semibold mb-2">Lightning Fast</h3>
             <p className="text-muted-foreground">Process tasks 10x faster with AI-powered automation and intelligent workflows.</p>
           </div>
 
           <div className="text-center p-6">
-            <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="bg-primary/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
               <Brain className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Intelligent Insights</h3>
+            <h3 className="text-xl font-montserrat font-semibold mb-2">Intelligent Insights</h3>
             <p className="text-muted-foreground">Get smart recommendations and predictive analytics to make better decisions.</p>
           </div>
 
           <div className="text-center p-6">
-            <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Shield className="h-8 w-8 text-primary" />
+            <div className="bg-accent/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="h-8 w-8 text-accent" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Enterprise Security</h3>
+            <h3 className="text-xl font-montserrat font-semibold mb-2">Enterprise Security</h3>
             <p className="text-muted-foreground">Bank-level security with end-to-end encryption and compliance standards.</p>
           </div>
         </div>
@@ -130,11 +129,11 @@ export default function Landing() {
       {/* CTA Section */}
       <section className="container mx-auto px-6 py-20">
         <div className="text-center max-w-3xl mx-auto">
-          <h2 className="text-4xl font-bold text-foreground mb-6">
+          <h2 className="text-4xl font-montserrat font-bold text-foreground mb-6">
             Ready to transform your productivity?
           </h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of executives who have already revolutionized their workflow with VirtuAI Assistant.
+            Join executives who have revolutionized their workflow with AI that handles your day—before you even start it.
           </p>
           <Link to="/signup">
             <Button size="lg" className="text-lg px-8 py-6 rounded-full">
@@ -151,11 +150,11 @@ export default function Landing() {
             <div>
               <div className="flex items-center space-x-3 mb-4">
                 <img 
-                  src="/lovable-uploads/036bc610-6577-4d05-b8c9-6c1694626c8c.png" 
-                  alt="VirtuAI Assistant" 
-                  className="h-8 w-auto"
+                  src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+                  alt="VirtuAI Assistant Icon" 
+                  className="h-8 w-8"
                 />
-                <span className="font-bold">VirtuAI Assistant</span>
+                <span className="font-montserrat font-bold">VirtuAI Assistant</span>
               </div>
               <p className="text-muted-foreground">Your AI Executive Partner</p>
             </div>

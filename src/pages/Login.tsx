@@ -37,11 +37,11 @@ export default function Login() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center space-x-3 mb-6">
             <img 
-              src="/lovable-uploads/036bc610-6577-4d05-b8c9-6c1694626c8c.png" 
-              alt="VirtuAI Assistant" 
-              className="h-10 w-auto"
+              src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+              alt="VirtuAI Assistant Icon" 
+              className="h-10 w-10"
             />
-            <span className="text-xl font-bold text-foreground">VirtuAI Assistant</span>
+            <span className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</span>
           </Link>
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back</h1>
           <p className="text-muted-foreground">Sign in to your VirtuAI Assistant account</p>
