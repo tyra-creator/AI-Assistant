@@ -183,17 +183,14 @@ const Index = () => {
               <Calendar className="h-5 w-5 mr-2 text-accent" />
               Upcoming Events
             </h2>
-            <div className="flex items-center gap-2">
-              <MuteButton isMuted={isMuted} onToggleMute={toggleMute} />
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={refreshEvents}
-                className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={refreshEvents}
+              className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           </div>
 
           {notifications.length > 0 ? (
@@ -249,6 +246,7 @@ const Index = () => {
               <div className="flex items-center gap-3 bg-card/80 backdrop-blur-sm p-4 rounded-2xl border border-primary/20 shadow-lg">
                 <WaveCircle isActive={isListening || isSpeaking} />
                 <TextInput onSubmit={handleTextSubmit} />
+                <MuteButton isMuted={isMuted} onToggleMute={toggleMute} />
                 <VoiceButton isListening={isListening} onClick={toggleListening} />
               </div>
               {isProcessing && (
