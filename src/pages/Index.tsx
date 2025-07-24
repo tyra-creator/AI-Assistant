@@ -159,14 +159,14 @@ const Index = () => {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background via-background to-accent/20 text-foreground">
       <Header />
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
-        <div className="md:w-80 p-6 border-r border-primary/30 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold flex items-center">
+        <div className="md:w-80 p-6 border-r border-primary/20 overflow-y-auto bg-card/30 backdrop-blur-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-montserrat font-semibold flex items-center text-foreground">
               <Calendar className="h-5 w-5 mr-2 text-accent" />
               Upcoming Events
             </h2>
@@ -174,7 +174,7 @@ const Index = () => {
               variant="outline" 
               size="sm"
               onClick={refreshEvents}
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -187,51 +187,61 @@ const Index = () => {
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground text-sm">No upcoming events</p>
+            <div className="text-center py-8">
+              <Calendar className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
+              <p className="text-muted-foreground text-sm">No upcoming events</p>
+            </div>
           )}
         </div>
 
         {/* Main content area */}
-        <div className="flex-1 flex flex-col items-center justify-between p-6 overflow-y-auto">
-          <div className="w-full max-w-3xl flex flex-col items-center gap-8">
-            <div className="flex items-center mt-6 justify-between w-full">
+        <div className="flex-1 flex flex-col items-center justify-between p-8 overflow-y-auto">
+          <div className="w-full max-w-4xl flex flex-col items-center gap-8">
+            <div className="flex items-center mt-8 justify-between w-full">
               <h1 
-                className={`text-2xl font-bold cursor-pointer relative transition-all duration-300 ${
+                className={`text-3xl font-montserrat font-bold cursor-pointer relative transition-all duration-300 ${
                   isTitleHovered ? 'text-accent' : 'text-foreground'
                 }`}
                 onClick={handleTitleClick}
                 onMouseEnter={() => setIsTitleHovered(true)}
                 onMouseLeave={() => setIsTitleHovered(false)}
               >
-                Executive Assistant
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-accent shadow-glow"></span>
+                VirtuAI Assistant
+                {isTitleHovered && (
+                  <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-accent rounded-full animate-pulse shadow-glow"></span>
+                )}
               </h1>
 
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={resetConversation}
-                className="flex items-center gap-1"
+                className="flex items-center gap-2 border-primary/30 hover:bg-primary/10 text-foreground"
               >
                 <RefreshCw className="h-4 w-4" />
-                New Conversation
+                New Chat
               </Button>
             </div>
 
             {activeMessage && (
-              <ResponseCard message={activeMessage} isSpeaking={isSpeaking} />
+              <div className="w-full animate-fade-in">
+                <ResponseCard message={activeMessage} isSpeaking={isSpeaking} />
+              </div>
             )}
 
-            <div className="mt-auto w-full">
-              <div className="flex items-center gap-2 bg-primary/10 p-2 rounded-lg border border-secondary/20">
+            <div className="mt-auto w-full max-w-2xl">
+              <div className="flex items-center gap-3 bg-card/80 backdrop-blur-sm p-4 rounded-2xl border border-primary/20 shadow-lg">
                 <WaveCircle isActive={isListening || isSpeaking} />
                 <TextInput onSubmit={handleTextSubmit} />
                 <VoiceButton isListening={isListening} onClick={toggleListening} />
               </div>
               {isProcessing && (
-                <p className="text-sm text-muted-foreground mt-2 text-center">
-                  Connecting to Dialogflow (executiveassistant-thyy)...
-                </p>
+                <div className="flex items-center justify-center mt-4 gap-2">
+                  <div className="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+                  <p className="text-sm text-muted-foreground animate-fade-in">
+                    Processing your request...
+                  </p>
+                </div>
               )}
             </div>
           </div>
