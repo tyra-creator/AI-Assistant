@@ -35,36 +35,11 @@ const Header: React.FC = () => {
   return (
     <header className="w-full py-4 px-6 flex justify-between items-center border-b border-primary/30">
       <div className="flex items-center">
-        <div 
-          className={`relative cursor-pointer transition-all duration-300 ${isAvatarHovered ? 'scale-110' : ''}`}
-          onClick={handleAvatarClick}
-          onMouseEnter={() => setIsAvatarHovered(true)}
-          onMouseLeave={() => setIsAvatarHovered(false)}
-        >
-          <Avatar className="h-10 w-10 bg-secondary">
-            <AvatarFallback className="text-white font-bold">
-              <svg 
-                viewBox="0 0 100 100" 
-                className="h-full w-full p-0.5"
-                fill="currentColor"
-              >
-                <path d="M50,10 C60,10 70,20 70,35 C70,50 60,55 50,55 C40,55 30,50 30,35 C30,20 40,10 50,10 Z" />
-                <path d="M30,60 C30,60 25,62 25,65 C25,68 25,90 25,90 L75,90 C75,90 75,68 75,65 C75,62 70,60 70,60 C70,60 65,57 50,57 C35,57 30,60 30,60 Z" />
-              </svg>
-            </AvatarFallback>
-          </Avatar>
-          {isAvatarHovered && (
-            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-secondary rounded-full animate-pulse" />
-          )}
-        </div>
-        <div className="ml-3 flex items-center space-x-2">
-          <img 
-            src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
-            alt="VirtuAI Assistant Icon" 
-            className="h-6 w-6"
-          />
-          <h1 className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</h1>
-        </div>
+        <img 
+          src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
+          alt="VirtuAI Assistant Icon" 
+          className="h-12 w-12"
+        />
       </div>
       <div className="flex items-center text-muted-foreground">
         <Clock className="h-4 w-4 mr-2" />

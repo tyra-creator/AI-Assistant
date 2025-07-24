@@ -36,13 +36,12 @@ export default function SignUp() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-accent/20 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center space-x-3 mb-6">
+          <Link to="/" className="inline-flex items-center justify-center mb-6">
             <img 
               src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
               alt="VirtuAI Assistant Icon" 
-              className="h-10 w-10"
+              className="h-16 w-16"
             />
-            <span className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</span>
           </Link>
           <h1 className="text-3xl font-montserrat font-bold text-foreground mb-2">Create your account</h1>
           <p className="text-muted-foreground">Your AI Executive Partner</p>
