@@ -49,6 +49,7 @@ export class SpeechService {
   private static recognition: SpeechRecognition | null = null;
   private static speechSynthesis: SpeechSynthesisUtterance | null = null;
   private static isListening = false;
+  private static isMuted = false;
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
   private static selectedVoice: SpeechSynthesisVoice | null = null;
@@ -207,6 +208,12 @@ export class SpeechService {
    * Speak text using the browser's text-to-speech capabilities
    */
   static speak(text: string, onEnd?: () => void) {
+    // Don't speak if muted
+    if (this.isMuted) {
+      if (onEnd) onEnd();
+      return;
+    }
+
     const utterance = new SpeechSynthesisUtterance(text);
 
     // Ensure the selected voice is set
@@ -228,5 +235,23 @@ export class SpeechService {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+  }
+
+  /**
+   * Set mute state for audio output
+   */
+  static setMuted(muted: boolean): void {
+    this.isMuted = muted;
+    // If muting, stop any current speech
+    if (muted) {
+      this.stopSpeaking();
+    }
+  }
+
+  /**
+   * Get current mute state
+   */
+  static isMutedState(): boolean {
+    return this.isMuted;
   }
 }

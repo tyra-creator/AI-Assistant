@@ -6,6 +6,7 @@ import VoiceButton from '@/components/VoiceButton';
 import TextInput from '@/components/TextInput';
 import ResponseCard from '@/components/ResponseCard';
 import NotificationCard, { EventNotification } from '@/components/NotificationCard';
+import MuteButton from '@/components/MuteButton';
 import { DialogflowService } from '@/services/DialogflowService';
 import { APIService } from '@/services/APIService';
 import { SpeechService } from '@/services/SpeechService';
@@ -16,6 +17,7 @@ import { fetchCalendarEvents } from '@/services/APIService';
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [activeMessage, setActiveMessage] = useState("");
   const [notifications, setNotifications] = useState<EventNotification[]>([]);
   const [isTitleHovered, setIsTitleHovered] = useState(false);
@@ -151,6 +153,17 @@ const Index = () => {
     }
   };
 
+  const toggleMute = () => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    SpeechService.setMuted(newMutedState);
+    
+    toast({
+      title: newMutedState ? "Audio Muted" : "Audio Unmuted",
+      description: newMutedState ? "Voice responses are now muted" : "Voice responses are now enabled",
+    });
+  };
+
   // Stop speaking when component unmounts
   useEffect(() => {
     return () => {
@@ -170,14 +183,17 @@ const Index = () => {
               <Calendar className="h-5 w-5 mr-2 text-accent" />
               Upcoming Events
             </h2>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={refreshEvents}
-              className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <MuteButton isMuted={isMuted} onToggleMute={toggleMute} />
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={refreshEvents}
+                className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {notifications.length > 0 ? (
