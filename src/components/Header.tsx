@@ -59,7 +59,7 @@ const Header: React.FC = () => {
         </div>
         <div className="ml-3 flex items-center space-x-2">
           <img 
-            src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+            src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
             alt="VirtuAI Assistant Icon" 
             className="h-6 w-6"
           />

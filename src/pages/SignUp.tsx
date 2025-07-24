@@ -38,7 +38,7 @@ export default function SignUp() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center space-x-3 mb-6">
             <img 
-              src="/lovable-uploads/8b5a042e-24ee-4b55-95cb-5f7ec253c6ea.png" 
+              src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
               alt="VirtuAI Assistant Icon" 
               className="h-10 w-10"
             />
