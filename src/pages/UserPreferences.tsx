@@ -3,32 +3,60 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
-import { User, Settings, ArrowRight, Brain, Clock, Bell } from "lucide-react";
+import { User, Clock, ArrowRight, Brain, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const UserPreferences = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [preferences, setPreferences] = useState({
-    fullName: "",
-    jobTitle: "",
-    company: "",
-    primaryGoals: "",
-    communicationStyle: "professional",
-    responseSpeed: "balanced",
-    voiceNotifications: true,
-    smartSuggestions: true,
-    learningMode: true,
-    timeZone: "",
-    workingHours: ""
+    preferredName: "",
+    preferredTitle: "",
+    whatsappNumber: "",
+    jobTitleRole: "",
+    industry: "",
+    workingDays: [] as string[],
+    workingHoursStart: "",
+    workingHoursEnd: "",
+    dndHoursStart: "",
+    dndHoursEnd: "",
+    meetingTimesStart: "",
+    meetingTimesEnd: "",
+    breakTimeStart: "",
+    breakTimeEnd: ""
   });
 
-  const handleInputChange = (field: string, value: string | boolean) => {
+  const handleInputChange = (field: string, value: string | boolean | string[]) => {
     setPreferences(prev => ({ ...prev, [field]: value }));
   };
+
+  const handleWorkingDayToggle = (day: string) => {
+    setPreferences(prev => ({
+      ...prev,
+      workingDays: prev.workingDays.includes(day)
+        ? prev.workingDays.filter(d => d !== day)
+        : [...prev.workingDays, day]
+    }));
+  };
+
+  const industries = [
+    "Technology",
+    "Healthcare",
+    "Finance",
+    "Education",
+    "Retail",
+    "Manufacturing",
+    "Real Estate",
+    "Marketing",
+    "Consulting",
+    "Legal",
+    "Other"
+  ];
+
+  const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,177 +99,194 @@ const UserPreferences = () => {
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-4">
                   <User className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-foreground">About You</h3>
+                  <h3 className="text-lg font-semibold text-foreground">Personal Details</h3>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="fullName" className="text-foreground">Full Name</Label>
+                    <Label htmlFor="preferredName" className="text-foreground">Preferred Name</Label>
                     <Input
-                      id="fullName"
+                      id="preferredName"
                       type="text"
-                      placeholder="John Doe"
-                      value={preferences.fullName}
-                      onChange={(e) => handleInputChange("fullName", e.target.value)}
+                      placeholder="How should I address you?"
+                      value={preferences.preferredName}
+                      onChange={(e) => handleInputChange("preferredName", e.target.value)}
                       className="bg-background/50 border-primary/30 focus:border-primary"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="jobTitle" className="text-foreground">Job Title</Label>
+                    <Label htmlFor="preferredTitle" className="text-foreground">Preferred Title</Label>
                     <Input
-                      id="jobTitle"
+                      id="preferredTitle"
                       type="text"
-                      placeholder="Product Manager"
-                      value={preferences.jobTitle}
-                      onChange={(e) => handleInputChange("jobTitle", e.target.value)}
+                      placeholder="Mr./Ms./Dr./etc."
+                      value={preferences.preferredTitle}
+                      onChange={(e) => handleInputChange("preferredTitle", e.target.value)}
+                      className="bg-background/50 border-primary/30 focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsappNumber" className="text-foreground">WhatsApp Number</Label>
+                    <Input
+                      id="whatsappNumber"
+                      type="tel"
+                      placeholder="+1 234 567 8900"
+                      value={preferences.whatsappNumber}
+                      onChange={(e) => handleInputChange("whatsappNumber", e.target.value)}
+                      className="bg-background/50 border-primary/30 focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="jobTitleRole" className="text-foreground">Job Title/Role</Label>
+                    <Input
+                      id="jobTitleRole"
+                      type="text"
+                      placeholder="Product Manager, Developer, etc."
+                      value={preferences.jobTitleRole}
+                      onChange={(e) => handleInputChange("jobTitleRole", e.target.value)}
                       className="bg-background/50 border-primary/30 focus:border-primary"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="company" className="text-foreground">Company</Label>
-                  <Input
-                    id="company"
-                    type="text"
-                    placeholder="Acme Corp"
-                    value={preferences.company}
-                    onChange={(e) => handleInputChange("company", e.target.value)}
-                    className="bg-background/50 border-primary/30 focus:border-primary"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="primaryGoals" className="text-foreground">Primary Goals</Label>
-                  <Textarea
-                    id="primaryGoals"
-                    placeholder="What would you like to achieve with this AI assistant? (e.g., improve productivity, automate tasks, get insights)"
-                    value={preferences.primaryGoals}
-                    onChange={(e) => handleInputChange("primaryGoals", e.target.value)}
-                    className="bg-background/50 border-primary/30 focus:border-primary min-h-[100px]"
-                  />
+                  <Label htmlFor="industry" className="text-foreground">Industry</Label>
+                  <Select value={preferences.industry} onValueChange={(value) => handleInputChange("industry", value)}>
+                    <SelectTrigger className="bg-background/50 border-primary/30 focus:border-primary">
+                      <SelectValue placeholder="Select your industry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {industries.map((industry) => (
+                        <SelectItem key={industry} value={industry.toLowerCase()}>
+                          {industry}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              {/* AI Behavior Settings */}
+              {/* Work Schedule */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-4">
-                  <Settings className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-foreground">AI Behavior</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      <Label className="text-foreground">Communication Style</Label>
-                      <div className="space-y-2">
-                        {["casual", "professional", "technical"].map((style) => (
-                          <label key={style} className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="communicationStyle"
-                              value={style}
-                              checked={preferences.communicationStyle === style}
-                              onChange={(e) => handleInputChange("communicationStyle", e.target.value)}
-                              className="text-primary"
-                            />
-                            <span className="text-foreground capitalize">{style}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label className="text-foreground">Response Speed</Label>
-                      <div className="space-y-2">
-                        {[
-                          { value: "quick", label: "Quick & Concise" },
-                          { value: "balanced", label: "Balanced" },
-                          { value: "detailed", label: "Detailed & Thorough" }
-                        ].map((option) => (
-                          <label key={option.value} className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="responseSpeed"
-                              value={option.value}
-                              checked={preferences.responseSpeed === option.value}
-                              onChange={(e) => handleInputChange("responseSpeed", e.target.value)}
-                              className="text-primary"
-                            />
-                            <span className="text-foreground">{option.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="timeZone" className="text-foreground">Time Zone</Label>
-                      <Input
-                        id="timeZone"
-                        type="text"
-                        placeholder="EST, PST, GMT+2, etc."
-                        value={preferences.timeZone}
-                        onChange={(e) => handleInputChange("timeZone", e.target.value)}
-                        className="bg-background/50 border-primary/30 focus:border-primary"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="workingHours" className="text-foreground">Working Hours</Label>
-                      <Input
-                        id="workingHours"
-                        type="text"
-                        placeholder="9 AM - 5 PM"
-                        value={preferences.workingHours}
-                        onChange={(e) => handleInputChange("workingHours", e.target.value)}
-                        className="bg-background/50 border-primary/30 focus:border-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Feature Preferences */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Bell className="h-5 w-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-foreground">Features</h3>
+                  <Briefcase className="h-5 w-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-foreground">Work Schedule</h3>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-card/30 rounded-lg border border-primary/10">
-                    <div className="space-y-1">
-                      <Label className="text-foreground">Voice Notifications</Label>
-                      <p className="text-sm text-muted-foreground">Get audio alerts for important updates</p>
+                  <div className="space-y-3">
+                    <Label className="text-foreground">Working Days</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {weekDays.map((day) => (
+                        <div key={day} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={day}
+                            checked={preferences.workingDays.includes(day)}
+                            onCheckedChange={() => handleWorkingDayToggle(day)}
+                          />
+                          <Label htmlFor={day} className="text-sm text-foreground cursor-pointer">
+                            {day.slice(0, 3)}
+                          </Label>
+                        </div>
+                      ))}
                     </div>
-                    <Switch
-                      checked={preferences.voiceNotifications}
-                      onCheckedChange={(checked) => handleInputChange("voiceNotifications", checked)}
-                    />
                   </div>
 
-                  <div className="flex items-center justify-between p-3 bg-card/30 rounded-lg border border-primary/10">
-                    <div className="space-y-1">
-                      <Label className="text-foreground">Smart Suggestions</Label>
-                      <p className="text-sm text-muted-foreground">AI-powered recommendations based on your activity</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Working Hours Start</Label>
+                      <Input
+                        type="time"
+                        value={preferences.workingHoursStart}
+                        onChange={(e) => handleInputChange("workingHoursStart", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
                     </div>
-                    <Switch
-                      checked={preferences.smartSuggestions}
-                      onCheckedChange={(checked) => handleInputChange("smartSuggestions", checked)}
-                    />
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Working Hours End</Label>
+                      <Input
+                        type="time"
+                        value={preferences.workingHoursEnd}
+                        onChange={(e) => handleInputChange("workingHoursEnd", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Time Preferences */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="h-5 w-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-foreground">Time Preferences</h3>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Do Not Disturb - Start</Label>
+                      <Input
+                        type="time"
+                        value={preferences.dndHoursStart}
+                        onChange={(e) => handleInputChange("dndHoursStart", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Do Not Disturb - End</Label>
+                      <Input
+                        type="time"
+                        value={preferences.dndHoursEnd}
+                        onChange={(e) => handleInputChange("dndHoursEnd", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 bg-card/30 rounded-lg border border-primary/10">
-                    <div className="space-y-1">
-                      <Label className="text-foreground">Learning Mode</Label>
-                      <p className="text-sm text-muted-foreground">Allow AI to learn from your preferences over time</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Preferred Meeting Times - Start</Label>
+                      <Input
+                        type="time"
+                        value={preferences.meetingTimesStart}
+                        onChange={(e) => handleInputChange("meetingTimesStart", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
                     </div>
-                    <Switch
-                      checked={preferences.learningMode}
-                      onCheckedChange={(checked) => handleInputChange("learningMode", checked)}
-                    />
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Preferred Meeting Times - End</Label>
+                      <Input
+                        type="time"
+                        value={preferences.meetingTimesEnd}
+                        onChange={(e) => handleInputChange("meetingTimesEnd", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Break/Lunch Time - Start (Optional)</Label>
+                      <Input
+                        type="time"
+                        value={preferences.breakTimeStart}
+                        onChange={(e) => handleInputChange("breakTimeStart", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Break/Lunch Time - End (Optional)</Label>
+                      <Input
+                        type="time"
+                        value={preferences.breakTimeEnd}
+                        onChange={(e) => handleInputChange("breakTimeEnd", e.target.value)}
+                        className="bg-background/50 border-primary/30 focus:border-primary"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
