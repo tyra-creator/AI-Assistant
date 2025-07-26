@@ -1,34 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Separator } from '../components/ui/separator';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '../integrations/supabase/client';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate('/app');
+      }
+    });
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    // TODO: Connect to backend API for authentication
+    setLoading(true);
+
     if (!email || !password) {
       setError('Email and password are required.');
+      setLoading(false);
       return;
     }
-    // Simulate success - redirect to main app
-    window.location.href = '/app';
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      navigate('/app');
+    }
+    setLoading(false);
   };
 
-  const handleGoogleLogin = () => {
-    // TODO: Implement Google OAuth
-    alert('Google sign in coming soon!');
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly',
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
   };
 
-  const handleMicrosoftLogin = () => {
-    // TODO: Implement Microsoft OAuth
-    alert('Microsoft sign in coming soon!');
+  const handleMicrosoftLogin = async () => {
+    setError('');
+    setLoading(true);
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,6 +102,7 @@ export default function Login() {
               variant="outline" 
               className="w-full" 
               onClick={handleGoogleLogin}
+              disabled={loading}
             >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -67,6 +117,7 @@ export default function Login() {
               variant="outline" 
               className="w-full" 
               onClick={handleMicrosoftLogin}
+              disabled={loading}
             >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z"/>
@@ -121,8 +172,8 @@ export default function Login() {
               </div>
             )}
             
-            <Button type="submit" className="w-full mt-6 h-12">
-              Sign In
+            <Button type="submit" className="w-full mt-6 h-12" disabled={loading}>
+              {loading ? 'Signing In...' : 'Sign In'}
             </Button>
           </form>
 

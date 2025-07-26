@@ -1,35 +1,91 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Separator } from '../components/ui/separator';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '../integrations/supabase/client';
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate('/app');
+      }
+    });
+  }, [navigate]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    // TODO: Connect to backend API for registration
+    setLoading(true);
+
     if (!email || !password || !name) {
       setError('All fields are required.');
+      setLoading(false);
       return;
     }
-    // Simulate success
-    alert('Account created! You can now log in.');
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/app`,
+        data: {
+          full_name: name,
+        },
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setError('');
+      alert('Account created! Please check your email to verify your account.');
+    }
+    setLoading(false);
   };
 
-  const handleGoogleSignUp = () => {
-    // TODO: Implement Google OAuth
-    alert('Google sign up coming soon!');
+  const handleGoogleSignUp = async () => {
+    setError('');
+    setLoading(true);
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly',
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
   };
 
-  const handleMicrosoftSignUp = () => {
-    // TODO: Implement Microsoft OAuth
-    alert('Microsoft sign up coming soon!');
+  const handleMicrosoftSignUp = async () => {
+    setError('');
+    setLoading(true);
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,6 +110,7 @@ export default function SignUp() {
               variant="outline" 
               className="w-full" 
               onClick={handleGoogleSignUp}
+              disabled={loading}
             >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -68,6 +125,7 @@ export default function SignUp() {
               variant="outline" 
               className="w-full" 
               onClick={handleMicrosoftSignUp}
+              disabled={loading}
             >
               <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z"/>
@@ -121,8 +179,8 @@ export default function SignUp() {
               </div>
             )}
             
-            <Button type="submit" className="w-full mt-6 h-12">
-              Create Account
+            <Button type="submit" className="w-full mt-6 h-12" disabled={loading}>
+              {loading ? 'Creating Account...' : 'Create Account'}
             </Button>
           </form>
 
