@@ -34,28 +34,30 @@ serve(async (req) => {
     }
 
     console.log('Creating Supabase client...');
+    const authHeader = req.headers.get('Authorization');
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
+      authHeader ? {
         global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
+          headers: { Authorization: authHeader },
         },
-      }
+      } : {}
     );
 
-    // Get user from JWT
+    // Get user from JWT (optional for demo)
     console.log('Getting user from JWT...');
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    let user = null;
+    const { data: { user: authUser }, error: userError } = await supabaseClient.auth.getUser();
+    
     if (userError) {
-      console.error('User auth error:', userError);
-      throw new Error(`Authentication failed: ${userError.message}`);
+      console.log('No authentication provided - running in demo mode');
+    } else if (authUser) {
+      user = authUser;
+      console.log('User authenticated:', user.id);
+    } else {
+      console.log('No user found - running in demo mode');
     }
-    if (!user) {
-      console.error('No user found in JWT');
-      throw new Error('Unauthorized - no user');
-    }
-    console.log('User authenticated:', user.id);
 
     // Parse request body with validation
     console.log('Parsing request body...');
@@ -70,24 +72,28 @@ serve(async (req) => {
     const { message, conversationId }: AssistantRequest = requestBody;
     console.log('Request data:', { message: message?.substring(0, 50), conversationId });
 
-    // Get user preferences with error handling
+    // Get user preferences with error handling (only if authenticated)
     console.log('Fetching user preferences...');
     let preferences = null;
-    try {
-      const { data, error: prefsError } = await supabaseClient
-        .from('user_preferences')
-        .select('ai_settings')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (prefsError) {
-        console.error('Preferences fetch error:', prefsError);
-      } else {
-        preferences = data;
-        console.log('User preferences loaded:', !!preferences);
+    if (user) {
+      try {
+        const { data, error: prefsError } = await supabaseClient
+          .from('user_preferences')
+          .select('ai_settings')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (prefsError) {
+          console.error('Preferences fetch error:', prefsError);
+        } else {
+          preferences = data;
+          console.log('User preferences loaded:', !!preferences);
+        }
+      } catch (prefsError) {
+        console.error('Preferences query failed:', prefsError);
       }
-    } catch (prefsError) {
-      console.error('Preferences query failed:', prefsError);
+    } else {
+      console.log('Skipping user preferences - demo mode');
     }
 
     // SIMPLIFIED VERSION - Skip conversation history for now
