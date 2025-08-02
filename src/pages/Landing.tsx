@@ -10,6 +10,8 @@ export default function Landing() {
   const navigate = useNavigate();
 
   // Check if user is authenticated and redirect to app
+  // Temporarily disabled to view landing page
+  /*
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -29,6 +31,7 @@ export default function Landing() {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+  */
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-accent/20">
