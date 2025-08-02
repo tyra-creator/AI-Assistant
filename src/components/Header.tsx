@@ -34,12 +34,15 @@ const Header: React.FC = () => {
 
   return (
     <header className="w-full py-4 px-6 flex justify-between items-center border-b border-primary/30">
-      <div className="flex items-center">
+      <div className="flex items-center gap-3">
         <img 
           src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
           alt="VirtuAI Assistant Icon" 
           className="h-12 w-12"
         />
+        <h1 className="text-2xl font-montserrat font-bold text-foreground">
+          VirtuAI Assistant
+        </h1>
       </div>
       <div className="flex items-center text-muted-foreground">
         <Clock className="h-4 w-4 mr-2" />

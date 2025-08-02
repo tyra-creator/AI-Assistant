@@ -224,21 +224,7 @@ const Index = () => {
         {/* Main content area */}
         <div className="flex-1 flex flex-col items-center justify-between p-8 overflow-y-auto">
           <div className="w-full max-w-4xl flex flex-col items-center gap-8">
-            <div className="flex items-center mt-8 justify-between w-full">
-              <h1 
-                className={`text-3xl font-montserrat font-bold cursor-pointer relative transition-all duration-300 ${
-                  isTitleHovered ? 'text-accent' : 'text-foreground'
-                }`}
-                onClick={handleTitleClick}
-                onMouseEnter={() => setIsTitleHovered(true)}
-                onMouseLeave={() => setIsTitleHovered(false)}
-              >
-                VirtuAI Assistant
-                {isTitleHovered && (
-                  <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-accent rounded-full animate-pulse shadow-glow"></span>
-                )}
-              </h1>
-
+            <div className="flex items-center mt-8 justify-end w-full">
               <Button 
                 variant="outline" 
                 size="sm"
