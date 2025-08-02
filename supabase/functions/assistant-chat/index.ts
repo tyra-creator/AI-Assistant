@@ -89,7 +89,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: preferences?.ai_settings?.model || 'gpt-4o-mini',
+        model: 'gpt-4o-mini', // Use explicit model name
         messages: messages,
         temperature: preferences?.ai_settings?.temperature || 0.7,
         max_tokens: 1000,
