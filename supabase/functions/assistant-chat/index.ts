@@ -1,30 +1,24 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-
-interface AssistantRequest {
-  message: string;
-  conversationId?: string;
-}
-
 serve(async (req) => {
   console.log('=== Assistant Chat Function Started ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
   
   if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log('Processing POST request...');
+    
     // Validate OpenAI API key first
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     console.log('OpenAI API Key available:', !!openaiKey);
@@ -33,80 +27,27 @@ serve(async (req) => {
       throw new Error('OpenAI API key not configured');
     }
 
-    console.log('Creating Supabase client...');
-    const authHeader = req.headers.get('Authorization');
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      authHeader ? {
-        global: {
-          headers: { Authorization: authHeader },
-        },
-      } : {}
-    );
-
-    // Get user from JWT (optional for demo)
-    console.log('Getting user from JWT...');
-    let user = null;
-    const { data: { user: authUser }, error: userError } = await supabaseClient.auth.getUser();
-    
-    if (userError) {
-      console.log('No authentication provided - running in demo mode');
-    } else if (authUser) {
-      user = authUser;
-      console.log('User authenticated:', user.id);
-    } else {
-      console.log('No user found - running in demo mode');
-    }
-
-    // Parse request body with validation
+    // Parse request body
     console.log('Parsing request body...');
     let requestBody;
     try {
-      requestBody = await req.json();
+      const bodyText = await req.text();
+      console.log('Raw body:', bodyText);
+      requestBody = JSON.parse(bodyText);
+      console.log('Parsed body:', requestBody);
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
       throw new Error('Invalid JSON in request body');
     }
 
-    const { message, conversationId }: AssistantRequest = requestBody;
-    console.log('Request data:', { message: message?.substring(0, 50), conversationId });
+    const { message } = requestBody;
+    console.log('Message:', message);
 
-    // Get user preferences with error handling (only if authenticated)
-    console.log('Fetching user preferences...');
-    let preferences = null;
-    if (user) {
-      try {
-        const { data, error: prefsError } = await supabaseClient
-          .from('user_preferences')
-          .select('ai_settings')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
-        if (prefsError) {
-          console.error('Preferences fetch error:', prefsError);
-        } else {
-          preferences = data;
-          console.log('User preferences loaded:', !!preferences);
-        }
-      } catch (prefsError) {
-        console.error('Preferences query failed:', prefsError);
-      }
-    } else {
-      console.log('Skipping user preferences - demo mode');
+    if (!message) {
+      throw new Error('Message is required');
     }
 
-    // SIMPLIFIED VERSION - Skip conversation history for now
-    console.log('Building messages for OpenAI...');
-    const messages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: 'You are a helpful AI assistant. Be concise and helpful.'
-      },
-      { role: 'user', content: message }
-    ];
-
-    // SIMPLIFIED OpenAI call - no tools for debugging
+    // MINIMAL OpenAI call
     console.log('Calling OpenAI API...');
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -116,9 +57,12 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages: messages,
+        messages: [
+          { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
+          { role: 'user', content: message }
+        ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 100
       }),
     });
 
@@ -127,33 +71,29 @@ serve(async (req) => {
     if (!openaiResponse.ok) {
       const errorText = await openaiResponse.text();
       console.error('OpenAI API error response:', errorText);
-      console.error('OpenAI API status:', openaiResponse.status);
       throw new Error(`OpenAI API error (${openaiResponse.status}): ${errorText}`);
     }
 
     console.log('Parsing OpenAI response...');
     const aiResponse = await openaiResponse.json();
-    console.log('OpenAI response parsed successfully');
+    console.log('AI Response received');
     
-    const assistantMessage = aiResponse.choices?.[0]?.message;
-    if (!assistantMessage || !assistantMessage.content) {
-      console.error('Invalid assistant message response:', aiResponse);
+    const assistantMessage = aiResponse.choices?.[0]?.message?.content;
+    if (!assistantMessage) {
+      console.error('Invalid assistant message response');
       throw new Error('Invalid response from OpenAI');
     }
 
-    console.log('Assistant response received:', assistantMessage.content?.substring(0, 100));
-
-    // SIMPLIFIED - Skip conversation saving for debugging
     console.log('Returning successful response...');
     return new Response(JSON.stringify({
-      response: assistantMessage.content,
-      conversationId: null // Skip conversation ID for now
+      response: assistantMessage
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('Error in assistant-chat function:', error);
+    console.error('Error stack:', error.stack);
     return new Response(JSON.stringify({ 
       error: error.message || 'Internal server error' 
     }), {
