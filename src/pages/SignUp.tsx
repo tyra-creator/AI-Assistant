@@ -57,16 +57,28 @@ export default function SignUp() {
     setError('');
     setLoading(true);
     
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        scopes: 'email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly',
-        redirectTo: `${window.location.origin}/app`,
-      },
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/app`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          scopes: 'openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly'
+        },
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        console.error('Google OAuth error:', error);
+        setError(`Google sign-up failed: ${error.message}`);
+        setLoading(false);
+      }
+      // Note: If successful, the user will be redirected automatically
+    } catch (err) {
+      console.error('Unexpected error during Google sign-up:', err);
+      setError('An unexpected error occurred during sign-up');
       setLoading(false);
     }
   };
@@ -75,15 +87,24 @@ export default function SignUp() {
     setError('');
     setLoading(true);
     
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        redirectTo: `${window.location.origin}/app`,
-      },
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: `${window.location.origin}/app`,
+          scopes: 'openid email profile https://graph.microsoft.com/calendars.read https://graph.microsoft.com/mail.read'
+        },
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        console.error('Microsoft OAuth error:', error);
+        setError(`Microsoft sign-up failed: ${error.message}`);
+        setLoading(false);
+      }
+      // Note: If successful, the user will be redirected automatically
+    } catch (err) {
+      console.error('Unexpected error during Microsoft sign-up:', err);
+      setError('An unexpected error occurred during sign-up');
       setLoading(false);
     }
   };
