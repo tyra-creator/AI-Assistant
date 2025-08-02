@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, MessageCircle, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import WaveCircle from '@/components/WaveCircle';
 import VoiceButton from '@/components/VoiceButton';
@@ -13,6 +14,7 @@ import { SpeechService } from '@/services/SpeechService';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { fetchCalendarEvents } from '@/services/APIService';
+import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -26,8 +28,20 @@ const Index = () => {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
+    // Check if user is authenticated
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/login');
+        return;
+      }
+    };
+
+    checkAuth();
+
     const getEvents = async () => {
       try {
         const data = await fetchCalendarEvents();
@@ -47,7 +61,7 @@ const Index = () => {
 
     // Initialize speech services
     SpeechService.initialize();
-  }, []);
+  }, [navigate]);
 
   const toggleListening = () => {
     if (isListening) {
