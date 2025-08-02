@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { fetchCalendarEvents } from '@/services/APIService';
 import { supabase } from '@/integrations/supabase/client';
+import { UserProfileDropdown } from '@/components/UserProfileDropdown';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -222,7 +223,7 @@ const Index = () => {
         </div>
 
         {/* Main content area */}
-        <div className="flex-1 flex flex-col items-center justify-between p-8 overflow-y-auto">
+        <div className="flex-1 flex flex-col items-center justify-between p-8 overflow-y-auto relative">
           <div className="w-full max-w-4xl flex flex-col items-center gap-8">
             <div className="flex items-center mt-8 justify-end w-full">
               <Button 
@@ -258,6 +259,11 @@ const Index = () => {
                 </div>
               )}
             </div>
+          </div>
+          
+          {/* User Profile Dropdown - Bottom Left */}
+          <div className="absolute bottom-6 left-6">
+            <UserProfileDropdown />
           </div>
         </div>
       </main>
