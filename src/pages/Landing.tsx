@@ -78,10 +78,6 @@ export default function Landing() {
                   Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Button variant="outline" size="lg" className="text-lg px-8 py-6 rounded-full w-full sm:w-auto">
-                <MessageSquare className="mr-2 h-5 w-5" />
-                Try WhatsApp Demo
-              </Button>
             </div>
 
             {/* Trust Indicators */}
