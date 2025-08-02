@@ -1,36 +1,37 @@
 
-import { APIService } from './APIService';
+import { supabase } from '@/integrations/supabase/client';
 
-interface DialogflowResponse {
-  responseText: string;
-  isFinal: boolean;
-  intentDetected?: string;
-  confidence?: number;
-  parameters?: any;
+interface AssistantResponse {
+  response: string;
+  conversationId: string;
 }
 
 export class DialogflowService {
   /**
-   * Sends a text message to Dialogflow via the backend API and returns the response
+   * Sends a text message to the AI assistant via Supabase edge function
    */
-  static async sendMessage(message: string): Promise<string> {
+  static async sendMessage(message: string, conversationId?: string): Promise<string> {
     try {
-      console.log(`Sending message to Dialogflow API: ${message}`);
+      console.log(`Sending message to AI assistant: ${message}`);
       
-      // Get session ID from APIService
-      const sessionId = APIService.getSessionId();
-      
-      const response = await APIService.post<DialogflowResponse>('/dialogflow', {
-        message: message,
-        sessionId: sessionId
+      const { data, error } = await supabase.functions.invoke<AssistantResponse>('assistant-chat', {
+        body: {
+          message: message,
+          conversationId: conversationId
+        }
       });
       
-      console.log('Received response from Dialogflow:', response);
+      if (error) {
+        console.error('Error from assistant function:', error);
+        throw error;
+      }
       
-      return response.responseText || "I received your message but couldn't generate a response.";
+      console.log('Received response from AI assistant:', data);
+      
+      return data?.response || "I received your message but couldn't generate a response.";
       
     } catch (error) {
-      console.error('Error communicating with Dialogflow:', error);
+      console.error('Error communicating with AI assistant:', error);
       return "Sorry, I encountered an error while processing your request. Please try again.";
     }
   }
