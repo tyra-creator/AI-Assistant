@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Zap, Shield, Clock, Brain, Users, CheckCircle } from 'lucide-react';
+import { ArrowRight, Zap, Shield, Clock, Brain, Users, CheckCircle, MessageSquare } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { InterfaceMockup } from '@/components/InterfaceMockup';
+import { TestimonialCard } from '@/components/TestimonialCard';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -55,39 +57,46 @@ export default function Landing() {
 
       {/* Hero Section */}
       <section className="container mx-auto px-6 py-20">
-        <div className="text-center max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl font-montserrat font-bold text-foreground mb-6 leading-tight">
-            Your AI Executive Partner
-            <br />
-            <span className="text-primary">Effortless Email. Smarter Schedules.</span>
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto leading-relaxed">
-            AI that Handles Your Day—Before You Even Start It. Transform your productivity with intelligent automation and seamless collaboration.
-          </p>
-          <Link to="/signup">
-            <Button size="lg" className="text-lg px-8 py-6 rounded-full">
-              Start Now <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </Link>
-        </div>
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          {/* Left Side - Content */}
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-4xl md:text-6xl font-montserrat font-bold text-foreground mb-6 leading-tight">
+                Say Goodbye to Missed Meetings, Lost Emails & Endless Admin.
+              </h1>
+              <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+                Our AI assistant manages your day like a top-tier executive assistant — across web and WhatsApp.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Link to="/signup">
+                <Button size="lg" className="text-lg px-8 py-6 rounded-full w-full sm:w-auto">
+                  Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+              <Button variant="outline" size="lg" className="text-lg px-8 py-6 rounded-full w-full sm:w-auto">
+                <MessageSquare className="mr-2 h-5 w-5" />
+                Try WhatsApp Demo
+              </Button>
+            </div>
 
-        {/* Hero Image/Demo */}
-        <div className="mt-16 max-w-5xl mx-auto">
-          <div className="bg-card border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-primary/10 to-accent/10 p-6 border-b">
+            {/* Trust Indicators */}
+            <div className="flex items-center space-x-6 text-sm text-muted-foreground">
               <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-destructive rounded-full"></div>
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span>No credit card required</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span>14-day free trial</span>
               </div>
             </div>
-            <div className="p-8 bg-gradient-to-br from-card to-accent/5">
-              <div className="text-center">
-                <Brain className="h-16 w-16 text-primary mx-auto mb-4" />
-                <h3 className="text-2xl font-semibold mb-2">AI Executive Assistant Interface</h3>
-                <p className="text-muted-foreground">Voice-powered, intelligent, and always ready to help</p>
-              </div>
-            </div>
+          </div>
+
+          {/* Right Side - Interface Mockup */}
+          <div className="lg:pl-8">
+            <InterfaceMockup />
           </div>
         </div>
       </section>
@@ -127,6 +136,39 @@ export default function Landing() {
             <h3 className="text-xl font-montserrat font-semibold mb-2">Enterprise Security</h3>
             <p className="text-muted-foreground">Bank-level security with end-to-end encryption and compliance standards.</p>
           </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
+      <section className="container mx-auto px-6 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-montserrat font-bold text-foreground mb-4">
+            Loved by executives worldwide
+          </h2>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            See how top professionals are transforming their productivity with VirtuAI Assistant.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          <TestimonialCard
+            name="Sarah Chen"
+            role="CEO"
+            company="TechFlow Inc"
+            content="VirtuAI has completely transformed how I manage my day. It's like having the world's best executive assistant, available 24/7. My productivity has increased by 300%."
+          />
+          <TestimonialCard
+            name="Michael Rodriguez"
+            role="VP of Sales"
+            company="Global Dynamics"
+            content="The WhatsApp integration is a game-changer. I can schedule meetings, draft emails, and manage my calendar while I'm on the go. It's incredibly intuitive and powerful."
+          />
+          <TestimonialCard
+            name="Dr. Emily Watson"
+            role="Managing Director"
+            company="Innovation Labs"
+            content="The AI understands context better than any tool I've used. It drafts emails in my writing style and never misses a detail. It's like having a mind reader as an assistant."
+          />
         </div>
       </section>
 
