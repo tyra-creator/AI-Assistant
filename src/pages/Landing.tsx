@@ -88,11 +88,7 @@ export default function Landing() {
             <div className="flex items-center space-x-6 text-sm text-muted-foreground">
               <div className="flex items-center space-x-2">
                 <CheckCircle className="h-4 w-4 text-green-500" />
-                <span>No credit card required</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-500" />
-                <span>14-day free trial</span>
+                <span>30-day free trial</span>
               </div>
             </div>
           </div>
@@ -101,6 +97,39 @@ export default function Landing() {
           <div className="lg:pl-8">
             <InterfaceMockup />
           </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
+      <section className="container mx-auto px-6 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-montserrat font-bold text-foreground mb-4">
+            Loved by executives worldwide
+          </h2>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            See how top professionals are transforming their productivity with VirtuAI Assistant.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          <TestimonialCard
+            name="Sarah Chen"
+            role="CEO"
+            company="TechFlow Inc"
+            content="VirtuAI has completely transformed how I manage my day. It's like having the world's best executive assistant, available 24/7. My productivity has increased by 300%."
+          />
+          <TestimonialCard
+            name="Michael Rodriguez"
+            role="VP of Sales"
+            company="Global Dynamics"
+            content="The WhatsApp integration is a game-changer. I can schedule meetings, draft emails, and manage my calendar while I'm on the go. It's incredibly intuitive and powerful."
+          />
+          <TestimonialCard
+            name="Dr. Emily Watson"
+            role="Managing Director"
+            company="Innovation Labs"
+            content="The AI understands context better than any tool I've used. It drafts emails in my writing style and never misses a detail. It's like having a mind reader as an assistant."
+          />
         </div>
       </section>
 
@@ -142,38 +171,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Testimonials Section */}
-      <section className="container mx-auto px-6 py-20">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-montserrat font-bold text-foreground mb-4">
-            Loved by executives worldwide
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            See how top professionals are transforming their productivity with VirtuAI Assistant.
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8">
-          <TestimonialCard
-            name="Sarah Chen"
-            role="CEO"
-            company="TechFlow Inc"
-            content="VirtuAI has completely transformed how I manage my day. It's like having the world's best executive assistant, available 24/7. My productivity has increased by 300%."
-          />
-          <TestimonialCard
-            name="Michael Rodriguez"
-            role="VP of Sales"
-            company="Global Dynamics"
-            content="The WhatsApp integration is a game-changer. I can schedule meetings, draft emails, and manage my calendar while I'm on the go. It's incredibly intuitive and powerful."
-          />
-          <TestimonialCard
-            name="Dr. Emily Watson"
-            role="Managing Director"
-            company="Innovation Labs"
-            content="The AI understands context better than any tool I've used. It drafts emails in my writing style and never misses a detail. It's like having a mind reader as an assistant."
-          />
-        </div>
-      </section>
 
       {/* Stats Section */}
       <section className="bg-primary/5 py-20">
