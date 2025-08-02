@@ -5,7 +5,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { InterfaceMockup } from '@/components/InterfaceMockup';
 import { TestimonialCard } from '@/components/TestimonialCard';
-
 export default function Landing() {
   const navigate = useNavigate();
 
@@ -19,32 +18,25 @@ export default function Landing() {
         navigate('/app');
       }
     };
-
-    checkAuth();
-
-    // Listen for auth state changes
+     checkAuth();
+     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         navigate('/app');
       }
     });
-
-    return () => subscription.unsubscribe();
+     return () => subscription.unsubscribe();
   }, [navigate]);
   */
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-accent/20">
+  return <div className="min-h-screen bg-gradient-to-br from-background via-background to-accent/20">
       {/* Header */}
       <header className="container mx-auto px-6 py-6">
         <nav className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <img 
-              src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
-              alt="VirtuAI Assistant Icon" 
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-montserrat font-bold text-foreground">VirtuAI Assistant</span>
+            <img src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" alt="VirtuAI Assistant Icon" className="h-10 w-10" />
+            <span className="text-xl font-montserrat font-bold text-foreground">VirtuAI
+ Assistant</span>
           </div>
           <div className="hidden md:flex items-center space-x-8">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</a>
@@ -108,24 +100,9 @@ export default function Landing() {
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
-          <TestimonialCard
-            name="Sarah Chen"
-            role="CEO"
-            company="TechFlow Inc"
-            content="VirtuAI has completely transformed how I manage my day. It's like having the world's best executive assistant, available 24/7. My productivity has increased by 300%."
-          />
-          <TestimonialCard
-            name="Michael Rodriguez"
-            role="VP of Sales"
-            company="Global Dynamics"
-            content="The WhatsApp integration is a game-changer. I can schedule meetings, draft emails, and manage my calendar while I'm on the go. It's incredibly intuitive and powerful."
-          />
-          <TestimonialCard
-            name="Dr. Emily Watson"
-            role="Managing Director"
-            company="Innovation Labs"
-            content="The AI understands context better than any tool I've used. It drafts emails in my writing style and never misses a detail. It's like having a mind reader as an assistant."
-          />
+          <TestimonialCard name="Sarah Chen" role="CEO" company="TechFlow Inc" content="VirtuAI has completely transformed how I manage my day. It's like having the world's best executive assistant, available 24/7. My productivity has increased by 300%." />
+          <TestimonialCard name="Michael Rodriguez" role="VP of Sales" company="Global Dynamics" content="The WhatsApp integration is a game-changer. I can schedule meetings, draft emails, and manage my calendar while I'm on the go. It's incredibly intuitive and powerful." />
+          <TestimonialCard name="Dr. Emily Watson" role="Managing Director" company="Innovation Labs" content="The AI understands context better than any tool I've used. It drafts emails in my writing style and never misses a detail. It's like having a mind reader as an assistant." />
         </div>
       </section>
 
@@ -211,11 +188,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-3 mb-4">
-                <img 
-                  src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
-                  alt="VirtuAI Assistant Icon" 
-                  className="h-8 w-8"
-                />
+                <img src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" alt="VirtuAI Assistant Icon" className="h-8 w-8" />
                 <span className="font-montserrat font-bold">VirtuAI Assistant</span>
               </div>
               <p className="text-muted-foreground">Your AI Executive Partner</p>
@@ -250,6 +223,5 @@ export default function Landing() {
           </div>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 }
