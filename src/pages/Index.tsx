@@ -102,11 +102,18 @@ const Index = () => {
       setConversationHistory(prev => [...prev, { role: 'user', content: text }]);
       
       // Send the message to OpenAI assistant and get the response
+      console.log('Sending message to assistant-chat function:', text);
+      
       const { data, error } = await supabase.functions.invoke('assistant-chat', {
         body: { message: text }
       });
       
-      if (error) throw error;
+      console.log('Function response received:', { data, error });
+      
+      if (error) {
+        console.error('Function error:', error);
+        throw error;
+      }
       
       const response = data?.response || "I couldn't generate a response.";
       setActiveMessage(response);
