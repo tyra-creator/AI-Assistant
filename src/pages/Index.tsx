@@ -110,14 +110,22 @@ const Index = () => {
       
       let invokeResult;
       try {
-        console.log('About to invoke function...');
-        invokeResult = await supabase.functions.invoke('assistant-chat', {
+        console.log('About to invoke function with 30s timeout...');
+        
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Function call timeout after 30 seconds')), 30000)
+        );
+        
+        const functionPromise = supabase.functions.invoke('assistant-chat', {
           body: requestBody,
           headers: {
             'Content-Type': 'application/json',
           }
         });
-        console.log('Function invoke completed');
+        
+        invokeResult = await Promise.race([functionPromise, timeoutPromise]);
+        console.log('Function invoke completed successfully');
       } catch (invokeError) {
         console.error('Function invoke failed with error:', invokeError);
         console.error('Error details:', JSON.stringify(invokeError, null, 2));

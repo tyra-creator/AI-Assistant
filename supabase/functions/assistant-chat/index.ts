@@ -7,7 +7,8 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function Started ===');
+  console.log('=== Assistant Chat Function v2.0 Started ===');
+  console.log('Deployment timestamp:', new Date().toISOString());
   console.log('Method:', req.method);
   console.log('URL:', req.url);
   console.log('Headers:', Object.fromEntries(req.headers.entries()));
