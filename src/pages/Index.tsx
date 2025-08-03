@@ -8,7 +8,7 @@ import TextInput from '@/components/TextInput';
 import ResponseCard from '@/components/ResponseCard';
 import NotificationCard, { EventNotification } from '@/components/NotificationCard';
 import MuteButton from '@/components/MuteButton';
-import { DialogflowService } from '@/services/DialogflowService';
+
 import { APIService } from '@/services/APIService';
 import { SpeechService } from '@/services/SpeechService';
 import { useToast } from '@/hooks/use-toast';
@@ -101,8 +101,14 @@ const Index = () => {
       // Add user message to conversation history
       setConversationHistory(prev => [...prev, { role: 'user', content: text }]);
       
-      // Send the message to Dialogflow and get the response
-      const response = await DialogflowService.sendMessage(text);
+      // Send the message to OpenAI assistant and get the response
+      const { data, error } = await supabase.functions.invoke('assistant-chat', {
+        body: { message: text }
+      });
+      
+      if (error) throw error;
+      
+      const response = data?.response || "I couldn't generate a response.";
       setActiveMessage(response);
       
       // Add assistant response to conversation history
