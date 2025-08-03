@@ -108,15 +108,31 @@ const Index = () => {
       const requestBody = { message: text };
       console.log('Request body:', requestBody);
       
-      const { data, error } = await supabase.functions.invoke('assistant-chat', {
-        body: requestBody,
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
+      let invokeResult;
+      try {
+        console.log('About to invoke function...');
+        invokeResult = await supabase.functions.invoke('assistant-chat', {
+          body: requestBody,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        console.log('Function invoke completed');
+      } catch (invokeError) {
+        console.error('Function invoke failed with error:', invokeError);
+        console.error('Error details:', JSON.stringify(invokeError, null, 2));
+        throw new Error(`Function invoke failed: ${invokeError.message}`);
+      }
       
+      const { data, error } = invokeResult;
       console.log('Function response received:', { data, error });
       console.log('Full response object:', JSON.stringify({ data, error }, null, 2));
+      
+      // Check if the function exists/deployed properly
+      if (error && error.message && error.message.includes('not found')) {
+        console.error('Function not found - may not be deployed');
+        throw new Error('Assistant function not found. Please ensure the function is deployed.');
+      }
       
       if (error) {
         console.error('Function error:', error);
