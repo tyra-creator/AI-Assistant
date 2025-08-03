@@ -108,6 +108,29 @@ const Index = () => {
       const requestBody = { message: text };
       console.log('Request body:', requestBody);
       
+      // First, test if function is deployed with health check
+      console.log('Testing function deployment...');
+      try {
+        const healthCheck = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/assistant-chat', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnFzc3Z5cHZ3bmVkcGF5bHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1MTY1MjgsImV4cCI6MjA2OTA5MjUyOH0.zEo80CWmBR38anzKkcvZmXui7uvEQVhO9g_B7Q7WOmw`,
+          }
+        });
+        
+        if (!healthCheck.ok) {
+          throw new Error(`Function not deployed - Health check failed: ${healthCheck.status}`);
+        }
+        
+        const healthData = await healthCheck.json();
+        console.log('Health check passed:', healthData);
+      } catch (healthError) {
+        console.error('Function deployment check failed:', healthError);
+        setActiveMessage("❌ Assistant function is not deployed. Please check Supabase dashboard.");
+        setIsProcessing(false);
+        return;
+      }
+
       let invokeResult;
       try {
         console.log('About to invoke function with 30s timeout...');

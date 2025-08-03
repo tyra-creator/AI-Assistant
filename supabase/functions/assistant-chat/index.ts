@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v2.0 Started ===');
+  console.log('=== Assistant Chat Function v3.0 - FORCE REDEPLOY ===');
   console.log('Deployment timestamp:', new Date().toISOString());
   console.log('Method:', req.method);
   console.log('URL:', req.url);
@@ -18,11 +18,23 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Only accept POST requests
+  // Health check endpoint
+  if (req.method === 'GET') {
+    console.log('Health check request received');
+    return new Response(JSON.stringify({ 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: '3.0'
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Only accept POST requests for chat
   if (req.method !== 'POST') {
     console.error('Invalid request method:', req.method);
     return new Response(JSON.stringify({ 
-      error: `Method ${req.method} not allowed. Use POST.` 
+      error: `Method ${req.method} not allowed. Use POST for chat or GET for health check.` 
     }), {
       status: 405,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
