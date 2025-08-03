@@ -47,7 +47,9 @@ serve(async (req) => {
     // Validate OpenAI API key first
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     console.log('OpenAI API Key available:', !!openaiKey);
-    console.log('OpenAI API Key first 8 chars:', openaiKey ? openaiKey.substring(0, 8) + '...' : 'NONE');
+    console.log('OpenAI API Key length:', openaiKey ? openaiKey.length : 0);
+    console.log('OpenAI API Key first 12 chars:', openaiKey ? openaiKey.substring(0, 12) + '...' : 'NONE');
+    console.log('OpenAI API Key last 4 chars:', openaiKey ? '...' + openaiKey.slice(-4) : 'NONE');
     if (!openaiKey) {
       console.error('OPENAI_API_KEY not found in environment');
       throw new Error('OpenAI API key not configured');
