@@ -63,7 +63,7 @@ serve(async (req) => {
     // MINIMAL OpenAI call
     console.log('Calling OpenAI API with key ending in:', openaiKey.slice(-4));
     const openaiPayload = {
-      model: 'gpt-4.1-2025-04-14',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
         { role: 'user', content: message }
