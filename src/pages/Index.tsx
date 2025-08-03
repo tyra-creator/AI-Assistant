@@ -131,46 +131,33 @@ const Index = () => {
         return;
       }
 
-      let invokeResult;
-      try {
-        console.log('About to invoke function with 30s timeout...');
-        
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Function call timeout after 30 seconds')), 30000)
-        );
-        
-        const functionPromise = supabase.functions.invoke('assistant-chat', {
-          body: requestBody,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        
-        invokeResult = await Promise.race([functionPromise, timeoutPromise]);
-        console.log('Function invoke completed successfully');
-      } catch (invokeError) {
-        console.error('Function invoke failed with error:', invokeError);
-        console.error('Error details:', JSON.stringify(invokeError, null, 2));
-        throw new Error(`Function invoke failed: ${invokeError.message}`);
+      // Use direct fetch call since supabase.functions.invoke is having issues
+      console.log('Calling function directly via fetch...');
+      
+      const functionResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/assistant-chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnFzc3Z5cHZ3bmVkcGF5bHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1MTY1MjgsImV4cCI6MjA2OTA5MjUyOH0.zEo80CWmBR38anzKkcvZmXui7uvEQVhO9g_B7Q7WOmw`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!functionResponse.ok) {
+        const errorText = await functionResponse.text();
+        throw new Error(`Function call failed (${functionResponse.status}): ${errorText}`);
+      }
+
+      const data = await functionResponse.json();
+      console.log('Function response received:', data);
+      
+      // Check for error in response
+      if (data.error) {
+        console.error('Function returned error:', data.error);
+        throw new Error(data.error);
       }
       
-      const { data, error } = invokeResult;
-      console.log('Function response received:', { data, error });
-      console.log('Full response object:', JSON.stringify({ data, error }, null, 2));
-      
-      // Check if the function exists/deployed properly
-      if (error && error.message && error.message.includes('not found')) {
-        console.error('Function not found - may not be deployed');
-        throw new Error('Assistant function not found. Please ensure the function is deployed.');
-      }
-      
-      if (error) {
-        console.error('Function error:', error);
-        throw error;
-      }
-      
-      const response = data?.response || "I couldn't generate a response.";
+      const response = data.response || "I couldn't generate a response.";
       setActiveMessage(response);
       
       // Add assistant response to conversation history
