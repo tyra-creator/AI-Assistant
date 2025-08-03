@@ -10,10 +10,22 @@ serve(async (req) => {
   console.log('=== Assistant Chat Function Started ===');
   console.log('Method:', req.method);
   console.log('URL:', req.url);
+  console.log('Headers:', Object.fromEntries(req.headers.entries()));
   
   if (req.method === 'OPTIONS') {
     console.log('Handling OPTIONS request');
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Only accept POST requests
+  if (req.method !== 'POST') {
+    console.error('Invalid request method:', req.method);
+    return new Response(JSON.stringify({ 
+      error: `Method ${req.method} not allowed. Use POST.` 
+    }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
@@ -22,6 +34,7 @@ serve(async (req) => {
     // Validate OpenAI API key first
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     console.log('OpenAI API Key available:', !!openaiKey);
+    console.log('OpenAI API Key first 8 chars:', openaiKey ? openaiKey.substring(0, 8) + '...' : 'NONE');
     if (!openaiKey) {
       console.error('OPENAI_API_KEY not found in environment');
       throw new Error('OpenAI API key not configured');
@@ -48,22 +61,25 @@ serve(async (req) => {
     }
 
     // MINIMAL OpenAI call
-    console.log('Calling OpenAI API...');
+    console.log('Calling OpenAI API with key ending in:', openaiKey.slice(-4));
+    const openaiPayload = {
+      model: 'gpt-4.1-2025-04-14',
+      messages: [
+        { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.7,
+      max_tokens: 150
+    };
+    console.log('OpenAI payload:', JSON.stringify(openaiPayload, null, 2));
+    
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 100
-      }),
+      body: JSON.stringify(openaiPayload),
     });
 
     console.log('OpenAI response status:', openaiResponse.status);

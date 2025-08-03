@@ -103,12 +103,20 @@ const Index = () => {
       
       // Send the message to OpenAI assistant and get the response
       console.log('Sending message to assistant-chat function:', text);
+      console.log('Calling Supabase function: assistant-chat');
+      
+      const requestBody = { message: text };
+      console.log('Request body:', requestBody);
       
       const { data, error } = await supabase.functions.invoke('assistant-chat', {
-        body: { message: text }
+        body: requestBody,
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
       
       console.log('Function response received:', { data, error });
+      console.log('Full response object:', JSON.stringify({ data, error }, null, 2));
       
       if (error) {
         console.error('Function error:', error);
