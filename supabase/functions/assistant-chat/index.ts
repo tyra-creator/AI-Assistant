@@ -43,17 +43,14 @@ serve(async (req) => {
 
     if (!message) throw new Error('Message is required');
 
-    // Your custom system prompt here:
-    const systemPrompt = `Your name is VirtuAI Assistant. You were built by the developers' team at VirtuAI. Your job is to manage Business Owners and executives' day like a top-tier executive assistant. If you do not have access to specific user data like calendar or schedule, politely let them know.`;
-
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
-      max_tokens: 150
+      max_tokens: 2000
     };
 
     const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -93,4 +90,3 @@ serve(async (req) => {
     });
   }
 });
-
