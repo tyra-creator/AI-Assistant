@@ -7,32 +7,24 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v3.0 - FORCE REDEPLOY ===');
+  console.log('=== Assistant Chat Function v3.0 - DeepSeek Edition ===');
   console.log('Deployment timestamp:', new Date().toISOString());
-  console.log('Method:', req.method);
-  console.log('URL:', req.url);
-  console.log('Headers:', Object.fromEntries(req.headers.entries()));
-  
+
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS request');
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Health check endpoint
   if (req.method === 'GET') {
-    console.log('Health check request received');
     return new Response(JSON.stringify({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '3.0'
+      version: '3.0 (DeepSeek)' 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  // Only accept POST requests for chat
   if (req.method !== 'POST') {
-    console.error('Invalid request method:', req.method);
     return new Response(JSON.stringify({ 
       error: `Method ${req.method} not allowed. Use POST for chat or GET for health check.` 
     }), {
@@ -42,43 +34,17 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Processing POST request...');
-    
-    // Validate OpenAI API key first
-    const openaiKey = Deno.env.get('OPENAI_API_KEY');
-    console.log('OpenAI API Key available:', !!openaiKey);
-    console.log('OpenAI API Key length:', openaiKey ? openaiKey.length : 0);
-    console.log('OpenAI API Key first 12 chars:', openaiKey ? openaiKey.substring(0, 12) + '...' : 'NONE');
-    console.log('OpenAI API Key last 4 chars:', openaiKey ? '...' + openaiKey.slice(-4) : 'NONE');
-    if (!openaiKey) {
-      console.error('OPENAI_API_KEY not found in environment');
-      throw new Error('OpenAI API key not configured');
-    }
+    const deepseekKey = Deno.env.get('OPENROUTER_API_KEY');
+    if (!deepseekKey) throw new Error('DeepSeek API key not configured');
 
-    // Parse request body
-    console.log('Parsing request body...');
-    let requestBody;
-    try {
-      const bodyText = await req.text();
-      console.log('Raw body:', bodyText);
-      requestBody = JSON.parse(bodyText);
-      console.log('Parsed body:', requestBody);
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError);
-      throw new Error('Invalid JSON in request body');
-    }
-
+    const bodyText = await req.text();
+    const requestBody = JSON.parse(bodyText);
     const { message } = requestBody;
-    console.log('Message:', message);
 
-    if (!message) {
-      throw new Error('Message is required');
-    }
+    if (!message) throw new Error('Message is required');
 
-    // MINIMAL OpenAI call
-    console.log('Calling OpenAI API with key ending in:', openaiKey.slice(-4));
-    const openaiPayload = {
-      model: 'gpt-4o-mini',
+    const deepseekPayload = {
+      model: 'deepseek/deepseek-r1:free',
       messages: [
         { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
         { role: 'user', content: message }
@@ -86,36 +52,28 @@ serve(async (req) => {
       temperature: 0.7,
       max_tokens: 150
     };
-    console.log('OpenAI payload:', JSON.stringify(openaiPayload, null, 2));
-    
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+
+    const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiKey}`,
+        'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
+        // Optional but recommended by OpenRouter for analytics:
+        'HTTP-Referer': 'yourdomain.com', // replace with your domain if hosted
       },
-      body: JSON.stringify(openaiPayload),
+      body: JSON.stringify(deepseekPayload),
     });
 
-    console.log('OpenAI response status:', openaiResponse.status);
-    
-    if (!openaiResponse.ok) {
-      const errorText = await openaiResponse.text();
-      console.error('OpenAI API error response:', errorText);
-      throw new Error(`OpenAI API error (${openaiResponse.status}): ${errorText}`);
+    if (!deepseekResponse.ok) {
+      const errorText = await deepseekResponse.text();
+      throw new Error(`DeepSeek API error (${deepseekResponse.status}): ${errorText}`);
     }
 
-    console.log('Parsing OpenAI response...');
-    const aiResponse = await openaiResponse.json();
-    console.log('AI Response received');
-    
+    const aiResponse = await deepseekResponse.json();
     const assistantMessage = aiResponse.choices?.[0]?.message?.content;
-    if (!assistantMessage) {
-      console.error('Invalid assistant message response');
-      throw new Error('Invalid response from OpenAI');
-    }
 
-    console.log('Returning successful response...');
+    if (!assistantMessage) throw new Error('Invalid response from DeepSeek');
+
     return new Response(JSON.stringify({
       response: assistantMessage
     }), {
@@ -124,7 +82,6 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in assistant-chat function:', error);
-    console.error('Error stack:', error.stack);
     return new Response(JSON.stringify({ 
       error: error.message || 'Internal server error' 
     }), {
