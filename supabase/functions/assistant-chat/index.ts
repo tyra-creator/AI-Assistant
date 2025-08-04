@@ -46,7 +46,11 @@ serve(async (req) => {
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
-        { role: 'system', content: 'You are a helpful AI assistant. Be concise.' },
+        { role: 'system', content: '{ 
+  role: 'system', 
+  content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful, concise, and context-aware answers.` 
+}
+' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
