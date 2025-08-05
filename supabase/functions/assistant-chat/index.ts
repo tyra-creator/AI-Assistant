@@ -43,29 +43,45 @@ serve(async (req) => {
 
     if (!message) throw new Error('Message is required');
 
-    const deepseekPayload = {
-  model: 'deepseek/deepseek-r1:free',
-  messages: [
-    { 
-      role: 'system', 
-      content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.` 
-    },
-    { 
-      role: 'user', 
-      content: message 
+    // Simple intent detection for calendar integration
+    const isCalendarRequest = /\b(add|create|schedule|update|delete).*\b(event|meeting|calendar)/i.test(message);
+
+    if (isCalendarRequest) {
+      const calendarHandlerUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/calendar-handler`;
+      const calendarResponse = await fetch(calendarHandlerUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': req.headers.get("Authorization") || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message }),
+      });
+
+      const calendarData = await calendarResponse.json();
+      return new Response(JSON.stringify({ response: calendarData.response || '✅ Calendar action completed.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-  ],
-  temperature: 0.7,
-  max_tokens: 2000
-};
+
+    const deepseekPayload = {
+      model: 'deepseek/deepseek-r1:free',
+      messages: [
+        {
+          role: 'system',
+          content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.`
+        },
+        { role: 'user', content: message }
+      ],
+      temperature: 0.7,
+      max_tokens: 4096
+    };
 
     const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
-        // Optional but recommended by OpenRouter for analytics:
-        'HTTP-Referer': 'yourdomain.com', // replace with your domain if hosted
+        'HTTP-Referer': 'yourdomain.com',
       },
       body: JSON.stringify(deepseekPayload),
     });
@@ -96,3 +112,4 @@ serve(async (req) => {
     });
   }
 });
+
