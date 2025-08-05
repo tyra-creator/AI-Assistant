@@ -10,7 +10,7 @@ import NotificationCard, { EventNotification } from '@/components/NotificationCa
 import MuteButton from '@/components/MuteButton';
 
 import { APIService } from '@/services/APIService';
-import { SpeechService } from '@/services/SpeechService';
+import { SpeechService } from '@/services/ModernTTSService';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { fetchCalendarEvents } from '@/services/APIService';

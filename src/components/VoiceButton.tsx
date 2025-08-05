@@ -2,7 +2,7 @@
 import React from 'react';
 import { Mic, MicOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SpeechService } from '@/services/SpeechService';
+import { SpeechService } from '@/services/ModernTTSService';
 
 interface VoiceButtonProps {
   isListening: boolean;

@@ -42,16 +42,24 @@ declare global {
   }
 }
 
+import { KokoroTTS } from 'kokoro-js';
+
 /**
- * Service to handle speech recognition and text-to-speech functionality
+ * Modern TTS Service with Kokoro.js integration and fallback to browser TTS
  */
-export class SpeechService {
+export class ModernTTSService {
   private static recognition: SpeechRecognition | null = null;
-  private static speechSynthesis: SpeechSynthesisUtterance | null = null;
   private static isListening = false;
   private static isMuted = false;
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
+  
+  // Kokoro TTS
+  private static kokoroTTS: any = null;
+  private static isKokoroLoading = false;
+  private static kokoroLoadAttempted = false;
+  
+  // Fallback browser TTS
   private static selectedVoice: SpeechSynthesisVoice | null = null;
   private static voices: SpeechSynthesisVoice[] = [];
 
@@ -65,9 +73,12 @@ export class SpeechService {
       return false;
     }
 
-    // Load voices and listen for changes
+    // Load voices for fallback
     this.loadVoices();
     window.speechSynthesis.addEventListener('voiceschanged', this.loadVoices);
+
+    // Initialize Kokoro TTS asynchronously
+    this.initializeKokoro();
 
     try {
       // Initialize the SpeechRecognition object
@@ -111,6 +122,30 @@ export class SpeechService {
     } catch (error) {
       console.error('Error initializing speech recognition:', error);
       return false;
+    }
+  }
+
+  private static async initializeKokoro() {
+    if (this.kokoroLoadAttempted || this.isKokoroLoading) {
+      return;
+    }
+
+    this.isKokoroLoading = true;
+    this.kokoroLoadAttempted = true;
+
+    try {
+      console.log('Loading Kokoro TTS model...');
+      const model_id = "onnx-community/Kokoro-82M-v1.0-ONNX";
+      this.kokoroTTS = await KokoroTTS.from_pretrained(model_id, {
+        dtype: "q8", // Optimized for performance and size
+        device: "wasm", // Use WASM for better compatibility
+      });
+      console.log('Kokoro TTS model loaded successfully');
+    } catch (error) {
+      console.warn('Failed to load Kokoro TTS, falling back to browser TTS:', error);
+      this.kokoroTTS = null;
+    } finally {
+      this.isKokoroLoading = false;
     }
   }
 
@@ -182,38 +217,65 @@ export class SpeechService {
   }
 
   /**
-   * Pre-load and select the best female voice to reduce delay
+   * Speak text using Kokoro TTS with fallback to browser TTS
    */
-  private static selectOptimalVoice(): SpeechSynthesisVoice | null {
-    if (this.selectedVoice) {
-      return this.selectedVoice;
-    }
-
-    const voices = window.speechSynthesis.getVoices();
-    
-    // Try to find a female voice
-    this.selectedVoice = voices.find(voice => 
-      voice.lang.startsWith('en') && 
-      (voice.name.toLowerCase().includes('female') || 
-       voice.name.toLowerCase().includes('woman') ||
-       voice.name.toLowerCase().includes('samantha') ||
-       voice.name.toLowerCase().includes('victoria') ||
-       voice.name.toLowerCase().includes('karen'))
-    ) || null;
-
-    return this.selectedVoice;
-  }
-
-  /**
-   * Speak text using the browser's text-to-speech capabilities
-   */
-  static speak(text: string, onEnd?: () => void) {
+  static async speak(text: string, onEnd?: () => void) {
     // Don't speak if muted
     if (this.isMuted) {
       if (onEnd) onEnd();
       return;
     }
 
+    try {
+      // Try Kokoro TTS first
+      if (this.kokoroTTS && !this.isKokoroLoading) {
+        await this.speakWithKokoro(text, onEnd);
+        return;
+      }
+      
+      // If Kokoro is still loading, wait a bit and try again
+      if (this.isKokoroLoading) {
+        setTimeout(() => this.speak(text, onEnd), 100);
+        return;
+      }
+    } catch (error) {
+      console.warn('Kokoro TTS failed, falling back to browser TTS:', error);
+    }
+
+    // Fallback to browser TTS
+    this.speakWithBrowserTTS(text, onEnd);
+  }
+
+  private static async speakWithKokoro(text: string, onEnd?: () => void) {
+    try {
+      const audio = await this.kokoroTTS.generate(text, {
+        voice: "af_heart", // High-quality female voice
+      });
+      
+      // Convert to audio element and play
+      const audioBlob = new Blob([audio.audio], { type: 'audio/wav' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioElement = new Audio(audioUrl);
+      
+      audioElement.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (onEnd) onEnd();
+      };
+      
+      audioElement.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        console.warn('Kokoro audio playback failed, falling back to browser TTS');
+        this.speakWithBrowserTTS(text, onEnd);
+      };
+      
+      await audioElement.play();
+    } catch (error) {
+      console.warn('Kokoro generation failed:', error);
+      this.speakWithBrowserTTS(text, onEnd);
+    }
+  }
+
+  private static speakWithBrowserTTS(text: string, onEnd?: () => void) {
     const utterance = new SpeechSynthesisUtterance(text);
 
     // Ensure the selected voice is set
@@ -254,4 +316,21 @@ export class SpeechService {
   static isMutedState(): boolean {
     return this.isMuted;
   }
+
+  /**
+   * Check if Kokoro TTS is available
+   */
+  static isKokoroAvailable(): boolean {
+    return this.kokoroTTS !== null;
+  }
+
+  /**
+   * Check if Kokoro TTS is currently loading
+   */
+  static isKokoroTTSLoading(): boolean {
+    return this.isKokoroLoading;
+  }
 }
+
+// Export as SpeechService for backward compatibility
+export const SpeechService = ModernTTSService;
