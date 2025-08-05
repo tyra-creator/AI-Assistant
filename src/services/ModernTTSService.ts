@@ -43,6 +43,7 @@ declare global {
 }
 
 import { supabase } from '@/integrations/supabase/client';
+import * as KokoroJS from 'kokoro-js';
 
 /**
  * Modern TTS Service with OpenAI TTS and fallback to browser TTS
@@ -58,8 +59,13 @@ export class ModernTTSService {
   private static selectedVoice: SpeechSynthesisVoice | null = null;
   private static voices: SpeechSynthesisVoice[] = [];
   
+  // Kokoro.js TTS
+  private static kokoro: any | null = null;
+  private static kokoroInitialized = false;
+  private static kokoroLoading = false;
+  
   // Audio cache for repeated phrases
-  private static audioCache = new Map<string, string>();
+  private static audioCache = new Map<string, ArrayBuffer>();
 
   /**
    * Initialize the speech recognition service
@@ -74,6 +80,9 @@ export class ModernTTSService {
     // Load voices for fallback
     this.loadVoices();
     window.speechSynthesis.addEventListener('voiceschanged', this.loadVoices);
+
+    // Initialize Kokoro.js lazily
+    this.initializeKokoro();
 
     try {
       // Initialize the SpeechRecognition object
@@ -117,6 +126,23 @@ export class ModernTTSService {
     } catch (error) {
       console.error('Error initializing speech recognition:', error);
       return false;
+    }
+  }
+
+  private static async initializeKokoro(): Promise<void> {
+    if (this.kokoroInitialized || this.kokoroLoading) return;
+    
+    this.kokoroLoading = true;
+    try {
+      this.kokoro = new (KokoroJS as any).default();
+      await this.kokoro.load();
+      this.kokoroInitialized = true;
+      console.log('Kokoro.js initialized successfully');
+    } catch (error) {
+      console.warn('Failed to initialize Kokoro.js, will use fallback TTS:', error);
+      this.kokoro = null;
+    } finally {
+      this.kokoroLoading = false;
     }
   }
 
@@ -197,73 +223,68 @@ export class ModernTTSService {
       return;
     }
 
+    // Ensure Kokoro is initialized
+    if (!this.kokoroInitialized && !this.kokoroLoading) {
+      await this.initializeKokoro();
+    }
+
     try {
       // Check cache first
       const cacheKey = text.toLowerCase().trim();
       if (this.audioCache.has(cacheKey)) {
         console.log('Using cached audio');
-        this.playAudioFromBase64(this.audioCache.get(cacheKey)!, onEnd);
+        this.playAudioFromArrayBuffer(this.audioCache.get(cacheKey)!, onEnd);
         return;
       }
 
-      // Use OpenAI TTS via Supabase function
-      console.log('Generating speech with OpenAI TTS...');
-      const { data, error } = await supabase.functions.invoke('text-to-speech', {
-        body: { 
-          text,
-          voice: 'nova' // Warm, engaging female voice
+      // Try to use Kokoro.js first
+      if (this.kokoro && this.kokoroInitialized) {
+        console.log('Generating speech with Kokoro.js...');
+        const audioBuffer = await this.kokoro.generate(text, {
+          speaker: 'af',  // Default speaker
+          speed: 1.0,
+          emotion: 'neutral'
+        });
+
+        if (audioBuffer) {
+          // Cache the audio
+          this.audioCache.set(cacheKey, audioBuffer);
+          
+          // Play the audio
+          this.playAudioFromArrayBuffer(audioBuffer, onEnd);
+          return;
         }
-      });
-
-      if (error) {
-        throw new Error(error.message);
       }
 
-      if (data?.audioContent) {
-        // Cache the audio
-        this.audioCache.set(cacheKey, data.audioContent);
-        
-        // Play the audio
-        this.playAudioFromBase64(data.audioContent, onEnd);
-        return;
-      }
+      throw new Error('Kokoro.js not available');
     } catch (error) {
-      console.warn('OpenAI TTS failed, falling back to browser TTS:', error);
+      console.warn('Kokoro.js TTS failed, falling back to browser TTS:', error);
     }
 
     // Fallback to browser TTS
     this.speakWithBrowserTTS(text, onEnd);
   }
 
-  private static playAudioFromBase64(base64Audio: string, onEnd?: () => void) {
+  private static playAudioFromArrayBuffer(arrayBuffer: ArrayBuffer, onEnd?: () => void) {
     try {
-      // Convert base64 to blob
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audioElement = new Audio(audioUrl);
-      
-      audioElement.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        if (onEnd) onEnd();
-      };
-      
-      audioElement.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        console.warn('Audio playback failed');
-        if (onEnd) onEnd();
-      };
-      
-      audioElement.play().catch(error => {
-        console.warn('Audio play failed:', error);
-        URL.revokeObjectURL(audioUrl);
-        if (onEnd) onEnd();
-      });
+      // Create and play audio using Web Audio API
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContext.decodeAudioData(arrayBuffer.slice(0)) // Clone the buffer
+        .then(audioBuffer => {
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          
+          source.onended = () => {
+            if (onEnd) onEnd();
+          };
+          
+          source.start();
+        })
+        .catch(error => {
+          console.warn('Audio decoding failed:', error);
+          if (onEnd) onEnd();
+        });
     } catch (error) {
       console.warn('Audio processing failed:', error);
       if (onEnd) onEnd();
