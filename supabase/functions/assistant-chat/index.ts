@@ -48,7 +48,7 @@ serve(async (req) => {
       messages: [
         { role: 'system', content: '{ 
   role: 'system', 
-  content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful, concise, and context-aware answers.` 
+  content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.` 
 }
 ' },
         { role: 'user', content: message }
