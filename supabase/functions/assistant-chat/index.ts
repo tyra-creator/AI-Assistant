@@ -7,13 +7,9 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v3.0 - DeepSeek Edition ===');
-  console.log('Deployment timestamp:', new Date().toISOString());
-
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-
   if (req.method === 'GET') {
     return new Response(JSON.stringify({ 
       status: 'healthy',
@@ -23,36 +19,28 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ 
-      error: `Method ${req.method} not allowed. Use POST for chat or GET for health check.` 
-    }), {
+    return new Response(JSON.stringify({ error: `Method ${req.method} not allowed.` }), {
       status: 405,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
+  
   try {
     const deepseekKey = Deno.env.get('OPENROUTER_API_KEY');
-    const calendarUrl = Deno.env.get('CALENDAR_FUNCTION_URL'); // e.g., https://your.supabase.co/functions/v1/calendar-integration
-
     if (!deepseekKey) throw new Error('DeepSeek API key not configured');
-    if (!calendarUrl) throw new Error('Calendar function URL not configured');
 
-    const bodyText = await req.text();
-    const requestBody = JSON.parse(bodyText);
-    const { message } = requestBody;
+    const { message } = await req.json();
+    if (!message || typeof message !== 'string' || message.trim() === '') {
+      throw new Error('Message is required');
+    }
 
-    if (!message) throw new Error('Message is required');
-
-    // Step 1: Send user message to DeepSeek
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
-        {
-          role: 'system',
-          content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.`
+        { 
+          role: 'system', 
+          content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.` 
         },
         { role: 'user', content: message }
       ],
@@ -65,7 +53,6 @@ serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'yourdomain.com', // Replace with your actual domain
       },
       body: JSON.stringify(deepseekPayload),
     });
@@ -77,56 +64,15 @@ serve(async (req) => {
 
     const aiResponse = await deepseekResponse.json();
     const assistantMessage = aiResponse.choices?.[0]?.message?.content;
-
     if (!assistantMessage) throw new Error('Invalid response from DeepSeek');
 
-    // Step 2 (optional): Check if the message includes a calendar-related intent
-    const calendarKeywords = ['calendar', 'meeting', 'schedule', 'appointment'];
-    const isCalendarRequest = calendarKeywords.some(word =>
-      message.toLowerCase().includes(word)
-    );
-
-    let calendarResponse = null;
-    if (isCalendarRequest) {
-      const calendarResult = await fetch(calendarUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': req.headers.get('Authorization') || '',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'create_event',
-          event: {
-            title: 'Meeting from AI Assistant',
-            description: 'Auto-scheduled event from assistant',
-            start: new Date(Date.now() + 3600000).toISOString(),  // 1 hour later
-            end: new Date(Date.now() + 7200000).toISOString(),    // 2 hours later
-            attendees: [],
-          },
-        }),
-      });
-
-      if (calendarResult.ok) {
-        calendarResponse = await calendarResult.json();
-      } else {
-        const calendarError = await calendarResult.text();
-        console.warn('Calendar API error:', calendarError);
-        calendarResponse = { error: 'Failed to schedule calendar event' };
-      }
-    }
-
-    return new Response(JSON.stringify({
-      response: assistantMessage,
-      ...(calendarResponse ? { calendar: calendarResponse } : {})
-    }), {
+    return new Response(JSON.stringify({ response: assistantMessage }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('Error in assistant-chat function:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error' 
-    }), {
+    return new Response(JSON.stringify({ error: error.message || 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
