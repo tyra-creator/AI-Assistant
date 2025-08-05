@@ -43,7 +43,6 @@ declare global {
 }
 
 import { supabase } from '@/integrations/supabase/client';
-import * as KokoroJS from 'kokoro-js';
 
 /**
  * Modern TTS Service with OpenAI TTS and fallback to browser TTS
@@ -134,7 +133,10 @@ export class ModernTTSService {
     
     this.kokoroLoading = true;
     try {
-      this.kokoro = new (KokoroJS as any).default();
+      const KokoroModule = await import('kokoro-js');
+      // Handle different export styles
+      const Kokoro = (KokoroModule as any).default || (KokoroModule as any).Kokoro || KokoroModule;
+      this.kokoro = new Kokoro();
       await this.kokoro.load();
       this.kokoroInitialized = true;
       console.log('Kokoro.js initialized successfully');
