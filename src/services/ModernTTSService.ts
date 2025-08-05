@@ -134,9 +134,24 @@ export class ModernTTSService {
     this.kokoroLoading = true;
     try {
       const KokoroModule = await import('kokoro-js');
-      // Handle different export styles
-      const Kokoro = (KokoroModule as any).default || (KokoroModule as any).Kokoro || KokoroModule;
-      this.kokoro = new Kokoro();
+      console.log('Kokoro module loaded:', KokoroModule);
+      
+      // Try different ways to access the constructor
+      let KokoroConstructor = null;
+      if (typeof (KokoroModule as any).default === 'function') {
+        KokoroConstructor = (KokoroModule as any).default;
+      } else if (typeof (KokoroModule as any).Kokoro === 'function') {
+        KokoroConstructor = (KokoroModule as any).Kokoro;
+      } else if (typeof KokoroModule === 'function') {
+        KokoroConstructor = KokoroModule;
+      }
+      
+      if (!KokoroConstructor) {
+        throw new Error('No valid Kokoro constructor found in module');
+      }
+      
+      console.log('Using Kokoro constructor:', KokoroConstructor);
+      this.kokoro = new KokoroConstructor();
       await this.kokoro.load();
       this.kokoroInitialized = true;
       console.log('Kokoro.js initialized successfully');
