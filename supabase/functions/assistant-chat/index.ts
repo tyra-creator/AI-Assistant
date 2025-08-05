@@ -5,141 +5,236 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 };
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-  if (req.method === 'GET') return healthCheckResponse();
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: corsHeaders,
+      status: 204,
+    });
+  }
 
   try {
-    const { message, conversation_state = {} } = await req.json();
-    if (!message) throw new Error('Message is required');
-
-    // Handle meeting flow
-    if (isMeetingRequest(message) || conversation_state.meetingFlow) {
-      return handleMeetingFlow(message, conversation_state);
+    // Health check endpoint
+    if (req.method === 'GET') {
+      return new Response(JSON.stringify({
+        status: 'healthy',
+        version: '3.9 (Stable)',
+        timestamp: new Date().toISOString(),
+        environment: {
+          OPENROUTER_API_KEY: !!Deno.env.get('OPENROUTER_API_KEY'),
+          CALENDAR_FUNCTION_URL: !!Deno.env.get('CALENDAR_FUNCTION_URL')
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return defaultResponse();
+    // Only allow POST requests for chat
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ 
+        error: `Method ${req.method} not allowed`,
+        allowed_methods: ['POST', 'GET', 'OPTIONS']
+      }), {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Validate content type
+    const contentType = req.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return new Response(JSON.stringify({ 
+        error: 'Invalid content type',
+        required_content_type: 'application/json'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Parse and validate request body
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (e) {
+      return new Response(JSON.stringify({ 
+        error: 'Invalid JSON body',
+        details: e.message
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!requestBody.message) {
+      return new Response(JSON.stringify({ 
+        error: 'Message is required',
+        example: { message: "Schedule a meeting", conversation_state: {} }
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Process the message
+    const response = await processMessage(
+      requestBody.message,
+      requestBody.conversation_state || {}
+    );
+
+    return new Response(JSON.stringify(response), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
   } catch (error) {
-    return errorResponse(error);
+    console.error('Unhandled error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      request_id: crypto.randomUUID(),
+      timestamp: new Date().toISOString()
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
 
-async function handleMeetingFlow(message: string, state: any) {
-  // Improved detail extraction that handles various formats
-  const extracted = extractDetails(message);
-  const meetingDetails = { ...state.meetingDetails, ...extracted };
-  const missing = getMissingDetails(meetingDetails);
-
-  // If we have all required details
-  if (missing.length === 0) {
-    return new Response(JSON.stringify({
-      response: `📋 Please confirm:\n"${meetingDetails.title}"\n⏰ ${meetingDetails.time}\n📍 ${meetingDetails.location || 'No location'}\n👥 ${meetingDetails.participants?.join(', ') || 'No attendees'}\n\nReply "confirm" to schedule or provide corrections.`,
-      state: { 
-        meetingFlow: true,
-        meetingDetails,
-        readyToConfirm: true 
-      }
-    }), { headers: corsHeaders });
+async function processMessage(message: string, state: any) {
+  // Initialize API key
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY environment variable not set');
   }
 
-  // If user confirms with all details
-  if (message.toLowerCase().includes('confirm') && state.readyToConfirm) {
-    try {
-      const result = await scheduleMeeting(meetingDetails);
-      return new Response(JSON.stringify({
-        response: `✅ Meeting scheduled!\n"${meetingDetails.title}"\n⏰ ${meetingDetails.time}`,
-        details: result,
-        state: { meetingFlow: false } // Reset flow
-      }), { headers: corsHeaders });
-    } catch (error) {
-      return new Response(JSON.stringify({
-        response: "⚠️ Failed to schedule meeting. Please try again.",
-        error: error.message,
-        state: { meetingFlow: true, meetingDetails }
-      }), { headers: corsHeaders });
-    }
+  // Handle meeting requests
+  if (isMeetingRequest(message) || state.meetingContext) {
+    return handleMeetingContext(message, state);
   }
 
-  // Ask for missing details
-  return new Response(JSON.stringify({
-    response: `📅 To schedule this meeting, please provide:\n${missing.map(m => `• ${m.label} (${m.example})`).join('\n')}`,
-    state: { 
-      meetingFlow: true,
-      meetingDetails 
-    }
-  }), { headers: corsHeaders });
+  // Default assistant response
+  return {
+    response: "I'm your business assistant. How can I help you today?",
+    state: {}
+  };
 }
 
-// Improved detail extraction
-function extractDetails(message: string) {
-  const details: any = {};
-  
-  // Handle "title:... time:..." format
-  const pairs = message.split(/(?:\s|^)(\w+)\s*:\s*/).filter(Boolean);
-  for (let i = 0; i < pairs.length; i += 2) {
-    const key = pairs[i].toLowerCase();
-    const value = pairs[i+1]?.trim();
-    if (key && value) {
-      details[key] = value;
-    }
+async function handleMeetingContext(message: string, state: any) {
+  // Extract and validate meeting details
+  const details = extractMeetingDetails(message, state.meetingDetails || {});
+  const missing = validateMeetingDetails(details);
+
+  if (missing.length > 0) {
+    return {
+      response: `To schedule your meeting, please provide:\n${missing.map(m => `• ${m.label} (e.g. "${m.example}")`).join('\n')}`,
+      state: {
+        meetingContext: true,
+        meetingDetails: details
+      }
+    };
   }
 
-  // Extract time if not already found
+  // Confirm before scheduling
+  if (!state.confirmed) {
+    return {
+      response: `Please confirm meeting details:\n` +
+               `Title: ${details.title}\n` +
+               `Time: ${details.time}\n` +
+               `Attendees: ${details.participants?.join(', ') || 'None'}\n\n` +
+               `Reply "confirm" to schedule or provide corrections.`,
+      state: {
+        meetingContext: true,
+        meetingDetails: details,
+        readyToConfirm: true
+      }
+    };
+  }
+
+  // Schedule the meeting
+  try {
+    const result = await scheduleCalendarEvent(details);
+    return {
+      response: `✅ Meeting scheduled: ${details.title} at ${details.time}`,
+      details: result,
+      state: {} // Reset context
+    };
+  } catch (error) {
+    return {
+      response: "⚠️ Failed to schedule meeting. Please try again.",
+      error: error.message,
+      state: {
+        meetingContext: true,
+        meetingDetails: details
+      }
+    };
+  }
+}
+
+// Helper functions
+function isMeetingRequest(message: string): boolean {
+  return /(schedule|add|create|meeting|appointment)/i.test(message);
+}
+
+function extractMeetingDetails(message: string, currentDetails: any): any {
+  const details = { ...currentDetails };
+
+  // Extract key-value pairs (title:... time:...)
+  const keyValuePairs = message.match(/(\w+)\s*:\s*([^,]+)/g);
+  if (keyValuePairs) {
+    keyValuePairs.forEach(pair => {
+      const [key, value] = pair.split(':').map(s => s.trim());
+      details[key.toLowerCase()] = value;
+    });
+  }
+
+  // Extract time if not already set
   if (!details.time) {
-    const timeMatch = message.match(/(\d{1,2}(:\d{2})?\s*(am|pm)?\s*(?:to|-)\s*(\d{1,2}(:\d{2})?\s*(am|pm)?/i);
-    if (timeMatch) {
-      details.time = `${timeMatch[1]}${timeMatch[2]||''}-${timeMatch[3]}${timeMatch[4]||''}`;
-    }
+    const timeMatch = message.match(/(\d{1,2}(:\d{2})?\s*(am|pm)?\s*(?:to|-)\s*\d{1,2}(:\d{2})?\s*(am|pm)?)/i);
+    if (timeMatch) details.time = timeMatch[0];
   }
 
   return details;
 }
 
-function getMissingDetails(details: any) {
-  const requirements = [
+function validateMeetingDetails(details: any): Array<{label: string, example: string}> {
+  const required = [
     { key: 'title', label: 'Meeting title', example: 'Sales Review' },
-    { key: 'time', label: 'Date & time', example: 'Today 3-4pm' }
+    { key: 'time', label: 'Date and time', example: 'Tomorrow 2-3pm' }
   ];
-  return requirements.filter(req => !details[req.key]);
+  return required.filter(field => !details[field.key]);
 }
 
-// Helper functions
-function healthCheckResponse() {
-  return new Response(JSON.stringify({
-    status: 'healthy',
-    version: '3.8 (Robust Meeting Flow)',
-    timestamp: new Date().toISOString()
-  }), { headers: corsHeaders });
-}
+async function scheduleCalendarEvent(details: any): Promise<any> {
+  const calendarUrl = Deno.env.get('CALENDAR_FUNCTION_URL');
+  if (!calendarUrl) {
+    throw new Error('Calendar integration not configured');
+  }
 
-function errorResponse(error: Error) {
-  return new Response(JSON.stringify({ 
-    error: error.message || 'Internal server error'
-  }), {
-    status: 500,
-    headers: corsHeaders,
+  const response = await fetch(calendarUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+    },
+    body: JSON.stringify({
+      action: 'create_event',
+      event: {
+        title: details.title,
+        start: details.time.split(' to ')[0].trim(),
+        end: details.time.split(' to ')[1]?.trim() || details.time.split(' to ')[0].trim(),
+        description: details.description || '',
+        attendees: details.participants || []
+      }
+    })
   });
-}
 
-function defaultResponse() {
-  return new Response(JSON.stringify({
-    response: "I'm your business assistant. How can I help you today?"
-  }), { headers: corsHeaders });
-}
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to schedule event');
+  }
 
-function isMeetingRequest(message: string) {
-  return /(schedule|add|create|meeting|appointment)/i.test(message);
-}
-
-async function scheduleMeeting(details: any) {
-  // Implement your actual calendar integration here
-  return {
-    id: 'event_123',
-    htmlLink: 'https://calendar.example.com/event/123',
-    title: details.title,
-    time: details.time
-  };
+  return await response.json();
 }
