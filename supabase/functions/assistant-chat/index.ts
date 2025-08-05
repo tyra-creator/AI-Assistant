@@ -44,18 +44,20 @@ serve(async (req) => {
     if (!message) throw new Error('Message is required');
 
     const deepseekPayload = {
-      model: 'deepseek/deepseek-r1:free',
-      messages: [
-        { role: 'system', content: '{ 
-  role: 'system', 
-  content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.` 
-}
-' },
-        { role: 'user', content: message }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000
-    };
+  model: 'deepseek/deepseek-r1:free',
+  messages: [
+    { 
+      role: 'system', 
+      content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.` 
+    },
+    { 
+      role: 'user', 
+      content: message 
+    }
+  ],
+  temperature: 0.7,
+  max_tokens: 2000
+};
 
     const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
