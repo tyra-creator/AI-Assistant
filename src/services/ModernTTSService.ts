@@ -42,10 +42,8 @@ declare global {
   }
 }
 
-import { supabase } from '@/integrations/supabase/client';
-
 /**
- * Modern TTS Service with OpenAI TTS and fallback to browser TTS
+ * Modern TTS Service with enhanced browser TTS
  */
 export class ModernTTSService {
   private static recognition: SpeechRecognition | null = null;
@@ -54,17 +52,9 @@ export class ModernTTSService {
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
   
-  // Fallback browser TTS
+  // Enhanced browser TTS
   private static selectedVoice: SpeechSynthesisVoice | null = null;
   private static voices: SpeechSynthesisVoice[] = [];
-  
-  // Kokoro.js TTS
-  private static kokoro: any | null = null;
-  private static kokoroInitialized = false;
-  private static kokoroLoading = false;
-  
-  // Audio cache for repeated phrases
-  private static audioCache = new Map<string, ArrayBuffer>();
 
   /**
    * Initialize the speech recognition service
@@ -76,12 +66,9 @@ export class ModernTTSService {
       return false;
     }
 
-    // Load voices for fallback
+    // Load voices for enhanced TTS
     this.loadVoices();
     window.speechSynthesis.addEventListener('voiceschanged', this.loadVoices);
-
-    // Initialize Kokoro.js lazily
-    this.initializeKokoro();
 
     try {
       // Initialize the SpeechRecognition object
@@ -125,41 +112,6 @@ export class ModernTTSService {
     } catch (error) {
       console.error('Error initializing speech recognition:', error);
       return false;
-    }
-  }
-
-  private static async initializeKokoro(): Promise<void> {
-    if (this.kokoroInitialized || this.kokoroLoading) return;
-    
-    this.kokoroLoading = true;
-    try {
-      const KokoroModule = await import('kokoro-js');
-      console.log('Kokoro module loaded:', KokoroModule);
-      
-      // Try different ways to access the constructor
-      let KokoroConstructor = null;
-      if (typeof (KokoroModule as any).default === 'function') {
-        KokoroConstructor = (KokoroModule as any).default;
-      } else if (typeof (KokoroModule as any).Kokoro === 'function') {
-        KokoroConstructor = (KokoroModule as any).Kokoro;
-      } else if (typeof KokoroModule === 'function') {
-        KokoroConstructor = KokoroModule;
-      }
-      
-      if (!KokoroConstructor) {
-        throw new Error('No valid Kokoro constructor found in module');
-      }
-      
-      console.log('Using Kokoro constructor:', KokoroConstructor);
-      this.kokoro = new KokoroConstructor();
-      await this.kokoro.load();
-      this.kokoroInitialized = true;
-      console.log('Kokoro.js initialized successfully');
-    } catch (error) {
-      console.warn('Failed to initialize Kokoro.js, will use fallback TTS:', error);
-      this.kokoro = null;
-    } finally {
-      this.kokoroLoading = false;
     }
   }
 
@@ -231,7 +183,7 @@ export class ModernTTSService {
   }
 
   /**
-   * Speak text using OpenAI TTS with fallback to browser TTS
+   * Speak text using enhanced browser TTS
    */
   static async speak(text: string, onEnd?: () => void) {
     // Don't speak if muted
@@ -240,83 +192,22 @@ export class ModernTTSService {
       return;
     }
 
-    // Ensure Kokoro is initialized
-    if (!this.kokoroInitialized && !this.kokoroLoading) {
-      await this.initializeKokoro();
-    }
-
-    try {
-      // Check cache first
-      const cacheKey = text.toLowerCase().trim();
-      if (this.audioCache.has(cacheKey)) {
-        console.log('Using cached audio');
-        this.playAudioFromArrayBuffer(this.audioCache.get(cacheKey)!, onEnd);
-        return;
-      }
-
-      // Try to use Kokoro.js first
-      if (this.kokoro && this.kokoroInitialized) {
-        console.log('Generating speech with Kokoro.js...');
-        const audioBuffer = await this.kokoro.generate(text, {
-          speaker: 'af',  // Default speaker
-          speed: 1.0,
-          emotion: 'neutral'
-        });
-
-        if (audioBuffer) {
-          // Cache the audio
-          this.audioCache.set(cacheKey, audioBuffer);
-          
-          // Play the audio
-          this.playAudioFromArrayBuffer(audioBuffer, onEnd);
-          return;
-        }
-      }
-
-      throw new Error('Kokoro.js not available');
-    } catch (error) {
-      console.warn('Kokoro.js TTS failed, falling back to browser TTS:', error);
-    }
-
-    // Fallback to browser TTS
+    // Use enhanced browser TTS
     this.speakWithBrowserTTS(text, onEnd);
   }
 
-  private static playAudioFromArrayBuffer(arrayBuffer: ArrayBuffer, onEnd?: () => void) {
-    try {
-      // Create and play audio using Web Audio API
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContext.decodeAudioData(arrayBuffer.slice(0)) // Clone the buffer
-        .then(audioBuffer => {
-          const source = audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioContext.destination);
-          
-          source.onended = () => {
-            if (onEnd) onEnd();
-          };
-          
-          source.start();
-        })
-        .catch(error => {
-          console.warn('Audio decoding failed:', error);
-          if (onEnd) onEnd();
-        });
-    } catch (error) {
-      console.warn('Audio processing failed:', error);
-      if (onEnd) onEnd();
-    }
-  }
-
   private static speakWithBrowserTTS(text: string, onEnd?: () => void) {
+    // Cancel any ongoing speech first
+    window.speechSynthesis.cancel();
+    
     const utterance = new SpeechSynthesisUtterance(text);
 
-    // Enhance browser TTS settings
-    utterance.rate = 1.1; // Slightly faster
+    // Enhance browser TTS settings for better quality
+    utterance.rate = 1.0; // Natural speed
     utterance.pitch = 1.1; // Slightly higher pitch for more pleasant sound
-    utterance.volume = 0.9;
+    utterance.volume = 0.9; // Good volume level
 
-    // Ensure the selected voice is set
+    // Use the best available voice
     if (this.selectedVoice) {
       utterance.voice = this.selectedVoice;
     }
@@ -325,7 +216,15 @@ export class ModernTTSService {
       if (onEnd) onEnd();
     };
 
-    window.speechSynthesis.speak(utterance);
+    utterance.onerror = (event) => {
+      console.warn('Speech synthesis error:', event);
+      if (onEnd) onEnd();
+    };
+
+    // Small delay to ensure proper speech synthesis
+    setTimeout(() => {
+      window.speechSynthesis.speak(utterance);
+    }, 100);
   }
 
   /**
@@ -356,10 +255,10 @@ export class ModernTTSService {
   }
 
   /**
-   * Clear audio cache
+   * Clear audio cache - placeholder for compatibility
    */
   static clearCache(): void {
-    this.audioCache.clear();
+    // No cache to clear in browser TTS version
   }
 }
 
