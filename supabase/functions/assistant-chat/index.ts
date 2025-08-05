@@ -6,9 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Your Supabase calendar function URL - update accordingly
-const CALENDAR_FUNCTION_URL = 'https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration';
-
 serve(async (req) => {
   console.log('=== Assistant Chat Function v3.0 - DeepSeek Edition ===');
   console.log('Deployment timestamp:', new Date().toISOString());
@@ -38,9 +35,10 @@ serve(async (req) => {
 
   try {
     const deepseekKey = Deno.env.get('OPENROUTER_API_KEY');
-    if (!deepseekKey) throw new Error('DeepSeek API key not configured');
+    const calendarUrl = Deno.env.get('CALENDAR_FUNCTION_URL'); // e.g., https://your.supabase.co/functions/v1/calendar-integration
 
-    const authHeader = req.headers.get('Authorization') ?? '';
+    if (!deepseekKey) throw new Error('DeepSeek API key not configured');
+    if (!calendarUrl) throw new Error('Calendar function URL not configured');
 
     const bodyText = await req.text();
     const requestBody = JSON.parse(bodyText);
@@ -48,67 +46,14 @@ serve(async (req) => {
 
     if (!message) throw new Error('Message is required');
 
-    // Basic keyword-based detection for calendar actions (you can improve with NLP)
-    // This is just a simple example; adapt or expand as needed.
-    const lowerMsg = message.toLowerCase();
-    let calendarAction = null;
-    let calendarEvent = null;
-
-    if (lowerMsg.includes('add meeting') || lowerMsg.includes('create event') || lowerMsg.includes('new event')) {
-      calendarAction = 'create_event';
-      // You might want to parse details from the message or get them from a follow-up dialog.
-      // Here is a placeholder event for demonstration.
-      calendarEvent = {
-        title: 'Meeting',
-        description: 'Scheduled via VirtuAI assistant',
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 60*60*1000).toISOString(), // +1 hour
-      };
-    } else if (lowerMsg.includes('update event') || lowerMsg.includes('edit event')) {
-      calendarAction = 'update_event';
-      // You'd get eventId and updated fields from dialog context in real case
-    } else if (lowerMsg.includes('delete event') || lowerMsg.includes('remove event')) {
-      calendarAction = 'delete_event';
-      // You'd get eventId from dialog context in real case
-    } else if (lowerMsg.includes('show events') || lowerMsg.includes('my calendar') || lowerMsg.includes('upcoming events')) {
-      calendarAction = 'get_events';
-    }
-
-    // If calendar action detected, call calendar function
-    if (calendarAction) {
-      const calendarPayload: any = { action: calendarAction };
-      if (calendarEvent) calendarPayload.event = calendarEvent;
-
-      // Call your single calendar integration function
-      const calendarResponseRaw = await fetch(CALENDAR_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(calendarPayload),
-      });
-
-      if (!calendarResponseRaw.ok) {
-        const errorText = await calendarResponseRaw.text();
-        throw new Error(`Calendar function error (${calendarResponseRaw.status}): ${errorText}`);
-      }
-
-      const calendarResponse = await calendarResponseRaw.json();
-
-      // Respond directly with calendar function result
-      return new Response(JSON.stringify({
-        response: `✅ Calendar action completed: ${calendarResponse.message || JSON.stringify(calendarResponse)}`
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Otherwise, handle as normal DeepSeek chat request
+    // Step 1: Send user message to DeepSeek
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
-        { role: 'system', content: 'You are VirtuAI Assistant, built by the VirtuAI developer\'s team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.' },
+        {
+          role: 'system',
+          content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.`
+        },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
@@ -120,8 +65,7 @@ serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
-        // Optional but recommended:
-        'HTTP-Referer': 'yourdomain.com',
+        'HTTP-Referer': 'yourdomain.com', // Replace with your actual domain
       },
       body: JSON.stringify(deepseekPayload),
     });
@@ -136,8 +80,44 @@ serve(async (req) => {
 
     if (!assistantMessage) throw new Error('Invalid response from DeepSeek');
 
+    // Step 2 (optional): Check if the message includes a calendar-related intent
+    const calendarKeywords = ['calendar', 'meeting', 'schedule', 'appointment'];
+    const isCalendarRequest = calendarKeywords.some(word =>
+      message.toLowerCase().includes(word)
+    );
+
+    let calendarResponse = null;
+    if (isCalendarRequest) {
+      const calendarResult = await fetch(calendarUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': req.headers.get('Authorization') || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create_event',
+          event: {
+            title: 'Meeting from AI Assistant',
+            description: 'Auto-scheduled event from assistant',
+            start: new Date(Date.now() + 3600000).toISOString(),  // 1 hour later
+            end: new Date(Date.now() + 7200000).toISOString(),    // 2 hours later
+            attendees: [],
+          },
+        }),
+      });
+
+      if (calendarResult.ok) {
+        calendarResponse = await calendarResult.json();
+      } else {
+        const calendarError = await calendarResult.text();
+        console.warn('Calendar API error:', calendarError);
+        calendarResponse = { error: 'Failed to schedule calendar event' };
+      }
+    }
+
     return new Response(JSON.stringify({
-      response: assistantMessage
+      response: assistantMessage,
+      ...(calendarResponse ? { calendar: calendarResponse } : {})
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
