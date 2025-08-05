@@ -6,8 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Your Supabase calendar function URL - update accordingly
+const CALENDAR_FUNCTION_URL = 'https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration';
+
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v3.1 - DeepSeek + Calendar Actions ===');
+  console.log('=== Assistant Chat Function v3.0 - DeepSeek Edition ===');
   console.log('Deployment timestamp:', new Date().toISOString());
 
   if (req.method === 'OPTIONS') {
@@ -18,7 +21,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '3.1 (DeepSeek + Calendar)' 
+      version: '3.0 (DeepSeek)' 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -37,50 +40,75 @@ serve(async (req) => {
     const deepseekKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!deepseekKey) throw new Error('DeepSeek API key not configured');
 
+    const authHeader = req.headers.get('Authorization') ?? '';
+
     const bodyText = await req.text();
     const requestBody = JSON.parse(bodyText);
     const { message } = requestBody;
 
     if (!message) throw new Error('Message is required');
 
-    // Detect intent for calendar actions
+    // Basic keyword-based detection for calendar actions (you can improve with NLP)
+    // This is just a simple example; adapt or expand as needed.
     const lowerMsg = message.toLowerCase();
-    const isAdd = lowerMsg.includes("add a meeting") || lowerMsg.includes("create a meeting") || lowerMsg.includes("schedule a meeting");
-    const isUpdate = lowerMsg.includes("update") || lowerMsg.includes("reschedule");
-    const isDelete = lowerMsg.includes("delete") || lowerMsg.includes("remove meeting");
+    let calendarAction = null;
+    let calendarEvent = null;
 
-    if (isAdd || isUpdate || isDelete) {
-      const calendarEndpoint = isAdd
-        ? 'https://your-supabase-url/functions/v1/calendar-add'
-        : isUpdate
-        ? 'https://your-supabase-url/functions/v1/calendar-update'
-        : 'https://your-supabase-url/functions/v1/calendar-delete';
+    if (lowerMsg.includes('add meeting') || lowerMsg.includes('create event') || lowerMsg.includes('new event')) {
+      calendarAction = 'create_event';
+      // You might want to parse details from the message or get them from a follow-up dialog.
+      // Here is a placeholder event for demonstration.
+      calendarEvent = {
+        title: 'Meeting',
+        description: 'Scheduled via VirtuAI assistant',
+        start: new Date().toISOString(),
+        end: new Date(Date.now() + 60*60*1000).toISOString(), // +1 hour
+      };
+    } else if (lowerMsg.includes('update event') || lowerMsg.includes('edit event')) {
+      calendarAction = 'update_event';
+      // You'd get eventId and updated fields from dialog context in real case
+    } else if (lowerMsg.includes('delete event') || lowerMsg.includes('remove event')) {
+      calendarAction = 'delete_event';
+      // You'd get eventId from dialog context in real case
+    } else if (lowerMsg.includes('show events') || lowerMsg.includes('my calendar') || lowerMsg.includes('upcoming events')) {
+      calendarAction = 'get_events';
+    }
 
-      const calendarResponse = await fetch(calendarEndpoint, {
+    // If calendar action detected, call calendar function
+    if (calendarAction) {
+      const calendarPayload: any = { action: calendarAction };
+      if (calendarEvent) calendarPayload.event = calendarEvent;
+
+      // Call your single calendar integration function
+      const calendarResponseRaw = await fetch(CALENDAR_FUNCTION_URL, {
         method: 'POST',
         headers: {
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(calendarPayload),
       });
 
-      if (!calendarResponse.ok) {
-        const errorText = await calendarResponse.text();
-        throw new Error(`Calendar function error (${calendarResponse.status}): ${errorText}`);
+      if (!calendarResponseRaw.ok) {
+        const errorText = await calendarResponseRaw.text();
+        throw new Error(`Calendar function error (${calendarResponseRaw.status}): ${errorText}`);
       }
 
-      return new Response(JSON.stringify({ response: '✅ Calendar action completed.' }), {
+      const calendarResponse = await calendarResponseRaw.json();
+
+      // Respond directly with calendar function result
+      return new Response(JSON.stringify({
+        response: `✅ Calendar action completed: ${calendarResponse.message || JSON.stringify(calendarResponse)}`
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // Otherwise, handle as normal DeepSeek chat request
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
-        {
-          role: 'system',
-          content: `You are VirtuAI Assistant, built by the VirtuAI developer's team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.`
-        },
+        { role: 'system', content: 'You are VirtuAI Assistant, built by the VirtuAI developer\'s team. Your job is to help business owners and executives manage their day efficiently. Provide helpful and context-aware answers.' },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
@@ -92,6 +120,7 @@ serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
+        // Optional but recommended:
         'HTTP-Referer': 'yourdomain.com',
       },
       body: JSON.stringify(deepseekPayload),
@@ -123,3 +152,4 @@ serve(async (req) => {
     });
   }
 });
+
