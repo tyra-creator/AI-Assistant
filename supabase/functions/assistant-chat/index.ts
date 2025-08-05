@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v3.2 - Enhanced Error Handling ===');
+  console.log('=== Assistant Chat Function v3.3 - Calendar Guided Setup ===');
   console.log('Deployment timestamp:', new Date().toISOString());
 
   if (req.method === 'OPTIONS') {
@@ -18,7 +18,10 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '3.2 (Enhanced Error Handling)' 
+      version: '3.3 (Calendar Guided Setup)',
+      capabilities: {
+        calendar: Deno.env.get('CALENDAR_FUNCTION_URL') ? 'ready' : 'needs_setup'
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -40,33 +43,60 @@ serve(async (req) => {
     const { message } = await req.json();
     if (!message) throw new Error('Message is required');
 
-    // First check if this is a meeting creation request
-    const meetingRegex = /(schedule|add|create|set up).*(meeting|event|appointment)/i;
+    // Check for meeting-related requests
+    const meetingRegex = /(schedule|add|create|set up|book).*(meeting|event|appointment)/i;
+    const isMeetingRequest = meetingRegex.test(message);
     const calendarFunctionURL = Deno.env.get('CALENDAR_FUNCTION_URL');
 
-    if (meetingRegex.test(message)) {
+    if (isMeetingRequest) {
       if (!calendarFunctionURL) {
+        // Provide detailed setup instructions
         return new Response(JSON.stringify({
-          response: "I can help schedule meetings, but first you need to connect your calendar. Please go to settings to connect your calendar account.",
-          action_required: "connect_calendar"
+          response: "I can help schedule meetings, but we need to set up your calendar integration first. Here's how:",
+          action_required: "calendar_setup",
+          instructions: [
+            "1. Go to your Supabase Dashboard",
+            "2. Navigate to the Functions section",
+            "3. Find your assistant-chat function",
+            "4. Add an environment variable named CALENDAR_FUNCTION_URL",
+            "5. Set the value to your calendar function URL",
+            "Need help? Contact support@yourapp.com"
+          ],
+          help_link: "https://your-docs.com/calendar-setup"
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      // Extract meeting details using AI
+      // If calendar is configured but request is vague
+      if (message.toLowerCase().trim() === "can you add a meeting") {
+        return new Response(JSON.stringify({
+          response: "I'd be happy to schedule a meeting for you. Could you please provide:",
+          questions: [
+            "• What's the meeting about? (Title)",
+            "• When should it occur? (Date & Time)",
+            "• Who needs to attend? (Optional attendees)",
+            "• Any other details? (Optional description)"
+          ],
+          example: "Example: 'Schedule a team meeting tomorrow at 2pm about Q3 planning with alice@example.com and bob@example.com'"
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Proceed with meeting extraction if we have details
       const extractPayload = {
         model: 'deepseek/deepseek-r1:free',
         messages: [
           { 
             role: 'system', 
-            content: `Extract meeting details from this request in JSON format with:
+            content: `Extract meeting details from this request. Respond in JSON format with:
             - title (string)
-            - start (ISO datetime or natural language if no time specified)
-            - end (ISO datetime or natural language if no time specified)
+            - start (ISO datetime or natural language)
+            - end (ISO datetime or natural language)
             - description (string or null)
             - attendees (array of emails or empty array)
-            Return ONLY the JSON object, nothing else.` 
+            Return ONLY the JSON object. If info is missing, use null.` 
           },
           { role: 'user', content: message }
         ],
@@ -89,14 +119,16 @@ serve(async (req) => {
       try {
         const meetingDetails = JSON.parse(extractedJson);
         
-        // Validate we have required fields
-        if (!meetingDetails.title || !meetingDetails.start) {
+        // Check for missing critical information
+        const missingInfo = [];
+        if (!meetingDetails.title) missingInfo.push("meeting title");
+        if (!meetingDetails.start) missingInfo.push("date/time");
+        
+        if (missingInfo.length > 0) {
           return new Response(JSON.stringify({
-            response: `To schedule this meeting, I need more details. Please specify: ${!meetingDetails.title ? 'meeting title' : ''}${!meetingDetails.title && !meetingDetails.start ? ' and ' : ''}${!meetingDetails.start ? 'date/time' : ''}.`,
-            missing_details: {
-              needs_title: !meetingDetails.title,
-              needs_time: !meetingDetails.start
-            }
+            response: `To schedule this meeting, I need more information. Please provide: ${missingInfo.join(" and ")}.`,
+            missing_info: missingInfo,
+            example: "Example: 'Schedule a budget meeting tomorrow at 3pm for 1 hour'"
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -114,7 +146,7 @@ serve(async (req) => {
             event: {
               title: meetingDetails.title,
               start: meetingDetails.start,
-              end: meetingDetails.end || meetingDetails.start, // Use same as start if end not specified
+              end: meetingDetails.end || meetingDetails.start,
               description: meetingDetails.description || '',
               attendees: meetingDetails.attendees || []
             }
@@ -125,17 +157,21 @@ serve(async (req) => {
         
         if (calendarRes.ok) {
           return new Response(JSON.stringify({
-            response: `✅ Meeting "${meetingDetails.title}" has been successfully scheduled!`,
-            details: calendarResult,
+            response: `✅ Success! I've scheduled "${meetingDetails.title}"`,
+            details: {
+              title: meetingDetails.title,
+              time: meetingDetails.start,
+              attendees: meetingDetails.attendees?.length || 0
+            },
             success: true
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         } else {
           return new Response(JSON.stringify({
-            response: `I couldn't schedule the meeting because: ${calendarResult.error || 'an unknown error occurred'}. Please try again or check your calendar connection.`,
-            error: calendarResult.error,
-            success: false
+            response: "⚠️ I couldn't schedule the meeting. The calendar service returned an error.",
+            error: calendarResult.error || 'Unknown error',
+            solution: "Please check your calendar connection or try again later."
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -146,22 +182,22 @@ serve(async (req) => {
       }
     }
 
-    // Regular chat response for non-meeting requests or if extraction failed
+    // Regular chat response
     const deepseekPayload = {
       model: 'deepseek/deepseek-r1:free',
       messages: [
         { 
           role: 'system', 
-          content: `You are VirtuAI Assistant. When users ask to schedule meetings:
-          1. Check if calendar is connected (CALENDAR_FUNCTION_URL)
-          2. Ask for missing details if needed
-          3. For calendar issues, explain how to connect
-          Otherwise, provide helpful business advice.` 
+          content: `You are VirtuAI Assistant. Help with business tasks. For meetings:
+          1. Check calendar setup
+          2. Ask for missing details
+          3. Guide through setup if needed
+          Otherwise provide concise, helpful responses.` 
         },
         { role: 'user', content: message }
       ],
       temperature: 0.7,
-      max_tokens: 2000
+      max_tokens: 1000
     };
 
     const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -176,20 +212,18 @@ serve(async (req) => {
     const aiResponse = await deepseekResponse.json();
     const assistantMessage = aiResponse.choices?.[0]?.message?.content;
 
-    if (!assistantMessage) throw new Error('Invalid response from DeepSeek');
-
     return new Response(JSON.stringify({
-      response: assistantMessage
+      response: assistantMessage || "I couldn't generate a response. Please try again."
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error('Error in assistant-chat function:', error);
+    console.error('Function error:', error);
     return new Response(JSON.stringify({ 
-      response: "Sorry, I encountered an error processing your request. Please try again.",
+      response: "Sorry, I encountered an error processing your request.",
       error: error.message,
-      suggestion: 'If this was a meeting request, please check your calendar connection in settings.'
+      support: "Please contact support@yourapp.com if this persists."
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
