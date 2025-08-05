@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log('=== Assistant Chat Function v3.0 - DeepSeek Edition ===');
+  console.log('=== Assistant Chat Function v3.1 - DeepSeek + Calendar Actions ===');
   console.log('Deployment timestamp:', new Date().toISOString());
 
   if (req.method === 'OPTIONS') {
@@ -18,7 +18,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '3.0 (DeepSeek)' 
+      version: '3.1 (DeepSeek + Calendar)' 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -43,22 +43,33 @@ serve(async (req) => {
 
     if (!message) throw new Error('Message is required');
 
-    // Simple intent detection for calendar integration
-    const isCalendarRequest = /\b(add|create|schedule|update|delete).*\b(event|meeting|calendar)/i.test(message);
+    // Detect intent for calendar actions
+    const lowerMsg = message.toLowerCase();
+    const isAdd = lowerMsg.includes("add a meeting") || lowerMsg.includes("create a meeting") || lowerMsg.includes("schedule a meeting");
+    const isUpdate = lowerMsg.includes("update") || lowerMsg.includes("reschedule");
+    const isDelete = lowerMsg.includes("delete") || lowerMsg.includes("remove meeting");
 
-    if (isCalendarRequest) {
-      const calendarHandlerUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/calendar-handler`;
-      const calendarResponse = await fetch(calendarHandlerUrl, {
+    if (isAdd || isUpdate || isDelete) {
+      const calendarEndpoint = isAdd
+        ? 'https://your-supabase-url/functions/v1/calendar-add'
+        : isUpdate
+        ? 'https://your-supabase-url/functions/v1/calendar-update'
+        : 'https://your-supabase-url/functions/v1/calendar-delete';
+
+      const calendarResponse = await fetch(calendarEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': req.headers.get("Authorization") || '',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ message }),
       });
 
-      const calendarData = await calendarResponse.json();
-      return new Response(JSON.stringify({ response: calendarData.response || '✅ Calendar action completed.' }), {
+      if (!calendarResponse.ok) {
+        const errorText = await calendarResponse.text();
+        throw new Error(`Calendar function error (${calendarResponse.status}): ${errorText}`);
+      }
+
+      return new Response(JSON.stringify({ response: '✅ Calendar action completed.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -73,7 +84,7 @@ serve(async (req) => {
         { role: 'user', content: message }
       ],
       temperature: 0.7,
-      max_tokens: 4096
+      max_tokens: 2000
     };
 
     const deepseekResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -112,4 +123,3 @@ serve(async (req) => {
     });
   }
 });
-
