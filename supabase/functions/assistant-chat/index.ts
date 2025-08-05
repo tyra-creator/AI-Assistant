@@ -8,22 +8,10 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method === 'GET') return healthCheckResponse();
 
   try {
-    // Health check
-    if (req.method === 'GET') {
-      return new Response(JSON.stringify({
-        status: 'healthy',
-        version: '3.7 (Full Meeting Flow)',
-        timestamp: new Date().toISOString()
-      }), { headers: corsHeaders });
-    }
-
-    // Parse request
     const { message, conversation_state = {} } = await req.json();
     if (!message) throw new Error('Message is required');
 
@@ -32,39 +20,43 @@ serve(async (req) => {
       return handleMeetingFlow(message, conversation_state);
     }
 
-    // Default response
-    return new Response(JSON.stringify({
-      response: "I'm your business assistant. How can I help you today?"
-    }), { headers: corsHeaders });
+    return defaultResponse();
 
   } catch (error) {
-    console.error('Error:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error'
-    }), {
-      status: 500,
-      headers: corsHeaders,
-    });
+    return errorResponse(error);
   }
 });
 
-// Improved meeting flow handler
 async function handleMeetingFlow(message: string, state: any) {
-  const meetingDetails = extractMeetingDetails(message, state.meetingDetails || {});
+  // Improved detail extraction that handles various formats
+  const extracted = extractDetails(message);
+  const meetingDetails = { ...state.meetingDetails, ...extracted };
   const missing = getMissingDetails(meetingDetails);
 
-  // If user confirms or we have all details
-  if (message.toLowerCase().includes('confirm') || missing.length === 0) {
+  // If we have all required details
+  if (missing.length === 0) {
+    return new Response(JSON.stringify({
+      response: `📋 Please confirm:\n"${meetingDetails.title}"\n⏰ ${meetingDetails.time}\n📍 ${meetingDetails.location || 'No location'}\n👥 ${meetingDetails.participants?.join(', ') || 'No attendees'}\n\nReply "confirm" to schedule or provide corrections.`,
+      state: { 
+        meetingFlow: true,
+        meetingDetails,
+        readyToConfirm: true 
+      }
+    }), { headers: corsHeaders });
+  }
+
+  // If user confirms with all details
+  if (message.toLowerCase().includes('confirm') && state.readyToConfirm) {
     try {
       const result = await scheduleMeeting(meetingDetails);
       return new Response(JSON.stringify({
-        response: `✅ Meeting scheduled: ${meetingDetails.title} at ${meetingDetails.time}`,
+        response: `✅ Meeting scheduled!\n"${meetingDetails.title}"\n⏰ ${meetingDetails.time}`,
         details: result,
         state: { meetingFlow: false } // Reset flow
       }), { headers: corsHeaders });
     } catch (error) {
       return new Response(JSON.stringify({
-        response: "Failed to schedule meeting. Please try again.",
+        response: "⚠️ Failed to schedule meeting. Please try again.",
         error: error.message,
         state: { meetingFlow: true, meetingDetails }
       }), { headers: corsHeaders });
@@ -73,8 +65,7 @@ async function handleMeetingFlow(message: string, state: any) {
 
   // Ask for missing details
   return new Response(JSON.stringify({
-    response: `To schedule this meeting, please provide:${missing.map(m => `\n• ${m}`).join('')}`,
-    example: "Example: 'Team sync tomorrow 2-3pm with alice@example.com'",
+    response: `📅 To schedule this meeting, please provide:\n${missing.map(m => `• ${m.label} (${m.example})`).join('\n')}`,
     state: { 
       meetingFlow: true,
       meetingDetails 
@@ -82,43 +73,69 @@ async function handleMeetingFlow(message: string, state: any) {
   }), { headers: corsHeaders });
 }
 
-// Helper functions
-function isMeetingRequest(message: string) {
-  return /(schedule|add|create|meeting|appointment)/i.test(message);
-}
-
-function extractMeetingDetails(message: string, currentDetails: any) {
-  const details = { ...currentDetails };
+// Improved detail extraction
+function extractDetails(message: string) {
+  const details: any = {};
   
-  // Extract from structured format (Title:... Time:...)
-  const structuredMatch = message.match(/(title|time|participants|location|agenda):([^,]+)/gi);
-  if (structuredMatch) {
-    structuredMatch.forEach(item => {
-      const [key, ...value] = item.split(':');
-      details[key.trim().toLowerCase()] = value.join(':').trim();
-    });
-    return details;
+  // Handle "title:... time:..." format
+  const pairs = message.split(/(?:\s|^)(\w+)\s*:\s*/).filter(Boolean);
+  for (let i = 0; i < pairs.length; i += 2) {
+    const key = pairs[i].toLowerCase();
+    const value = pairs[i+1]?.trim();
+    if (key && value) {
+      details[key] = value;
+    }
   }
 
-  // Extract from natural language
-  if (/sales meeting/i.test(message)) details.title = details.title || "Sales Meeting";
-  const timeMatch = message.match(/(\d{1,2}(:\d{2})?\s*(am|pm)?)/i);
-  if (timeMatch) details.time = timeMatch[0];
-  if (/no attendees/i.test(message)) details.participants = [];
+  // Extract time if not already found
+  if (!details.time) {
+    const timeMatch = message.match(/(\d{1,2}(:\d{2})?\s*(am|pm)?\s*(?:to|-)\s*(\d{1,2}(:\d{2})?\s*(am|pm)?/i);
+    if (timeMatch) {
+      details.time = `${timeMatch[1]}${timeMatch[2]||''}-${timeMatch[3]}${timeMatch[4]||''}`;
+    }
+  }
 
   return details;
 }
 
 function getMissingDetails(details: any) {
-  const missing = [];
-  if (!details.title) missing.push("Meeting title");
-  if (!details.time) missing.push("Date and time");
-  return missing;
+  const requirements = [
+    { key: 'title', label: 'Meeting title', example: 'Sales Review' },
+    { key: 'time', label: 'Date & time', example: 'Today 3-4pm' }
+  ];
+  return requirements.filter(req => !details[req.key]);
+}
+
+// Helper functions
+function healthCheckResponse() {
+  return new Response(JSON.stringify({
+    status: 'healthy',
+    version: '3.8 (Robust Meeting Flow)',
+    timestamp: new Date().toISOString()
+  }), { headers: corsHeaders });
+}
+
+function errorResponse(error: Error) {
+  return new Response(JSON.stringify({ 
+    error: error.message || 'Internal server error'
+  }), {
+    status: 500,
+    headers: corsHeaders,
+  });
+}
+
+function defaultResponse() {
+  return new Response(JSON.stringify({
+    response: "I'm your business assistant. How can I help you today?"
+  }), { headers: corsHeaders });
+}
+
+function isMeetingRequest(message: string) {
+  return /(schedule|add|create|meeting|appointment)/i.test(message);
 }
 
 async function scheduleMeeting(details: any) {
   // Implement your actual calendar integration here
-  // This is just a mock implementation
   return {
     id: 'event_123',
     htmlLink: 'https://calendar.example.com/event/123',
