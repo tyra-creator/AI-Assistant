@@ -1,3 +1,4 @@
+// Updated oauth-callback function
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -11,6 +12,7 @@ interface OAuthCallbackRequest {
   code: string;
   state?: string;
   user_id: string;
+  redirect_uri?: string;
 }
 
 serve(async (req) => {
@@ -25,9 +27,12 @@ serve(async (req) => {
     );
 
     const requestData: OAuthCallbackRequest = await req.json();
+    const redirectUri = requestData.redirect_uri || 
+      `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
 
     let tokenResponse;
     let userInfo;
+    let updateData: any = {};
 
     if (requestData.provider === "google") {
       tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -40,32 +45,32 @@ serve(async (req) => {
           client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET") || "",
           code: requestData.code,
           grant_type: "authorization_code",
-          redirect_uri: `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`,
+          redirect_uri: redirectUri,
         }),
       });
 
       const tokens = await tokenResponse.json();
+      if (!tokens.access_token) throw new Error("Google OAuth failed");
 
-      if (tokens.access_token) {
-        const userResponse = await fetch(
-          "https://www.googleapis.com/oauth2/v2/userinfo",
-          {
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
-            },
-          }
-        );
-        userInfo = await userResponse.json();
+      // Get user info and verify email scope
+      const userResponse = await fetch(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+          },
+        }
+      );
+      userInfo = await userResponse.json();
 
-        await supabaseClient
-          .from("profiles")
-          .update({
-            google_access_token: tokens.access_token,
-            google_refresh_token: tokens.refresh_token,
-            google_user_info: userInfo,
-          })
-          .eq("user_id", requestData.user_id);
-      }
+      updateData = {
+        google_access_token: tokens.access_token,
+        google_refresh_token: tokens.refresh_token,
+        google_expires_at: Date.now() + (tokens.expires_in * 1000),
+        google_user_info: userInfo,
+        email: userInfo.email,
+      };
+
     } else if (requestData.provider === "microsoft") {
       tokenResponse = await fetch(
         "https://login.microsoftonline.com/common/oauth2/v2.0/token",
@@ -79,39 +84,57 @@ serve(async (req) => {
             client_secret: Deno.env.get("MICROSOFT_CLIENT_SECRET") || "",
             code: requestData.code,
             grant_type: "authorization_code",
-            redirect_uri: `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`,
-            scope:
-              "https://graph.microsoft.com/user.read https://graph.microsoft.com/calendars.readwrite offline_access",
+            redirect_uri: redirectUri,
+            scope: "openid email profile Calendars.ReadWrite Mail.Send offline_access",
           }),
         }
       );
 
       const tokens = await tokenResponse.json();
+      if (!tokens.access_token) throw new Error("Microsoft OAuth failed");
 
-      if (tokens.access_token) {
-        const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
-          headers: {
-            Authorization: `Bearer ${tokens.access_token}`,
-          },
-        });
-        userInfo = await userResponse.json();
+      // Get user info
+      const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+        },
+      });
+      userInfo = await userResponse.json();
 
-        await supabaseClient
-          .from("profiles")
-          .update({
-            microsoft_access_token: tokens.access_token,
-            microsoft_refresh_token: tokens.refresh_token,
-            microsoft_user_info: userInfo,
-          })
-          .eq("user_id", requestData.user_id);
-      }
+      // Get user email
+      const emailResponse = await fetch("https://graph.microsoft.com/v1.0/me/mailboxSettings", {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+        },
+      });
+      const emailData = await emailResponse.json();
+
+      updateData = {
+        microsoft_access_token: tokens.access_token,
+        microsoft_refresh_token: tokens.refresh_token,
+        microsoft_expires_at: Date.now() + (tokens.expires_in * 1000),
+        microsoft_user_info: userInfo,
+        email: emailData.userEmailAddress || userInfo.mail || userInfo.userPrincipalName,
+      };
     }
+
+    // Update user profile with OAuth data
+    const { error } = await supabaseClient
+      .from("profiles")
+      .upsert({
+        user_id: requestData.user_id,
+        ...updateData,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) throw error;
 
     return new Response(
       JSON.stringify({
         success: true,
         message: `${requestData.provider} OAuth integration successful`,
         user_info: userInfo,
+        email: updateData.email,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -122,6 +145,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         error: error.message || "OAuth integration failed",
+        details: error.stack,
       }),
       {
         status: 500,
