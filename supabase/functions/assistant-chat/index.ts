@@ -252,15 +252,97 @@ async function handleConfirmation(state: any) {
     };
   }
 
-  // Here you would normally call the calendar integration
-  // For now, we'll simulate success
-  
   const { title, time } = state.meetingDetails;
   
-  return {
-    response: `✅ Meeting scheduled successfully!\n\nTitle: ${title}\nTime: ${time}\n\nYour meeting has been added to your calendar.`,
-    state: {}
-  };
+  try {
+    // Convert time to proper ISO format for calendar API
+    const startTime = convertToISODateTime(time);
+    const endTime = addOneHour(startTime);
+    
+    console.log(`Creating calendar event: ${title} from ${startTime} to ${endTime}`);
+    
+    // Call the calendar integration function
+    const calendarResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'create_event',
+        event: {
+          title: title,
+          description: `Meeting created via AI assistant`,
+          start: startTime,
+          end: endTime,
+          location: 'TBD'
+        }
+      }),
+    });
+
+    if (!calendarResponse.ok) {
+      const errorText = await calendarResponse.text();
+      console.error('Calendar integration failed:', errorText);
+      return {
+        response: `❌ Sorry, I couldn't create the calendar event. Error: ${errorText}\n\nPlease try again or check your calendar connection.`,
+        state: {}
+      };
+    }
+
+    const calendarResult = await calendarResponse.json();
+    console.log('Calendar event created:', calendarResult);
+    
+    return {
+      response: `✅ Meeting scheduled successfully!\n\nTitle: ${title}\nTime: ${time}\n\nYour meeting has been added to your calendar.`,
+      state: {}
+    };
+    
+  } catch (error) {
+    console.error('Error creating calendar event:', error);
+    return {
+      response: `❌ Sorry, I couldn't create the calendar event due to an error: ${error.message}\n\nPlease try again or check your calendar connection.`,
+      state: {}
+    };
+  }
+}
+
+// Helper function to convert time strings to ISO format
+function convertToISODateTime(timeString: string): string {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0]; // Get YYYY-MM-DD
+  
+  // Parse time from various formats
+  const timeMatch = timeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/i);
+  if (!timeMatch) {
+    // Default to current time + 1 hour if parsing fails
+    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+    return oneHourLater.toISOString();
+  }
+  
+  let hour = parseInt(timeMatch[1]);
+  const minute = timeMatch[2] ? parseInt(timeMatch[2].substring(1)) : 0;
+  const ampm = timeMatch[3].toLowerCase();
+  
+  // Convert to 24-hour format
+  if (ampm === 'pm' && hour !== 12) hour += 12;
+  if (ampm === 'am' && hour === 12) hour = 0;
+  
+  // Check if time mentions "today" or "tomorrow"
+  let targetDate = today;
+  if (timeString.toLowerCase().includes('tomorrow')) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    targetDate = tomorrow.toISOString().split('T')[0];
+  }
+  
+  return `${targetDate}T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
+}
+
+// Helper function to add one hour to a datetime string
+function addOneHour(isoString: string): string {
+  const date = new Date(isoString);
+  date.setHours(date.getHours() + 1);
+  return date.toISOString();
 }
 
 async function generateResponse(message: string, apiKey: string) {
