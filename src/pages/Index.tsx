@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { fetchCalendarEvents } from '@/services/APIService';
 import { supabase } from '@/integrations/supabase/client';
 import { UserProfileDropdown } from '@/components/UserProfileDropdown';
+import { useOAuthTokens } from '@/hooks/useOAuthTokens';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -30,6 +31,9 @@ const Index = () => {
   const [error, setError] = useState(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+  
+  // Initialize OAuth token extraction
+  useOAuthTokens();
 
   useEffect(() => {
     // Check if user is authenticated

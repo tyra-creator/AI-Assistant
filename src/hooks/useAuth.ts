@@ -8,6 +8,14 @@ interface UserProfile {
   email: string | null;
   first_name: string | null;
   last_name: string | null;
+  google_access_token: string | null;
+  google_refresh_token: string | null;
+  google_expires_at: string | null;
+  google_user_info: any;
+  microsoft_access_token: string | null;
+  microsoft_refresh_token: string | null;
+  microsoft_expires_at: string | null;
+  microsoft_user_info: any;
   created_at: string;
   updated_at: string;
 }
