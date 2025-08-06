@@ -273,7 +273,10 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
       headers['Authorization'] = authHeader;
     } else {
       headers['Authorization'] = `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`;
+      console.log('Warning: No user auth header available, using service role');
     }
+    
+    console.log('Calling calendar integration with headers:', Object.keys(headers));
     
     const calendarResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration', {
       method: 'POST',
@@ -290,9 +293,20 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
       }),
     });
 
+    console.log('Calendar response status:', calendarResponse.status);
+    
     if (!calendarResponse.ok) {
       const errorText = await calendarResponse.text();
       console.error('Calendar integration failed:', errorText);
+      
+      // Check if it's an authentication error
+      if (calendarResponse.status === 401 || errorText.includes('Unauthorized') || errorText.includes('invalid claim')) {
+        return {
+          response: `❌ Please log in to your account first to create calendar events. Once logged in, you can schedule meetings directly from this chat.`,
+          state: {}
+        };
+      }
+      
       return {
         response: `❌ Sorry, I couldn't create the calendar event. Error: ${errorText}\n\nPlease try again or check your calendar connection.`,
         state: {}
