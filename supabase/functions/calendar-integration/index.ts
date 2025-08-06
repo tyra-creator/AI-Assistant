@@ -69,7 +69,14 @@ serve(async (req) => {
 
     const accessToken = profile.google_access_token || profile.microsoft_access_token;
     if (!accessToken) {
-      throw new Error('No valid OAuth token found');
+      return new Response(JSON.stringify({
+        error: 'No valid OAuth token found',
+        needsAuth: true,
+        message: 'Please connect your Google or Microsoft account in the app settings to use calendar features.'
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const requestData: CalendarRequest = await req.json();

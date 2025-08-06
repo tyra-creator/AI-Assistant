@@ -44,18 +44,25 @@ const Index = () => {
     checkAuth();
 
     const getEvents = async () => {
-      try {
-        const data = await fetchCalendarEvents();
-        const calendarEvents = data.events.map((event) => ({
-          id: event.id,
-          title: event.summary,
-          datetime: event.start.dateTime || event.start.date,
-          description: event.description || 'No description available',
-        }));
-        setNotifications(calendarEvents);
-      } catch (err) {
-        setError(err.message);
+    try {
+      const data = await fetchCalendarEvents();
+      if (data.needsAuth) {
+        setError('Please connect your calendar account to view events');
+        setNotifications([]);
+        return;
       }
+      const calendarEvents = data.events.map((event) => ({
+        id: event.id,
+        title: event.summary || event.subject,
+        datetime: event.start?.dateTime || event.start?.date || event.start,
+        description: event.description || event.body?.content || 'No description available',
+      }));
+      setNotifications(calendarEvents);
+    } catch (err) {
+      console.error('Calendar fetch error:', err);
+      setError(err.message);
+      setNotifications([]);
+    }
     };
 
     getEvents();
@@ -105,7 +112,11 @@ const Index = () => {
       console.log('Sending message to assistant-chat function:', text);
       console.log('Calling Supabase function: assistant-chat');
       
-      const requestBody = { message: text };
+      const requestBody = { 
+        message: text,
+        conversation_state: conversationHistory.length > 0 ? { history: conversationHistory } : {},
+        session_id: APIService.getSessionId() || 'session_' + Date.now()
+      };
       console.log('Request body:', requestBody);
       
       // First, test if function is deployed with health check
@@ -209,15 +220,28 @@ const Index = () => {
     setIsProcessing(true);
     try {
       const data = await fetchCalendarEvents();
+      if (data.needsAuth) {
+        setError('Please connect your calendar account to view events');
+        setNotifications([]);
+        toast({
+          title: "Calendar Connection Required",
+          description: "Please connect your Google or Microsoft account to view calendar events.",
+          variant: "destructive",
+        });
+        return;
+      }
       const calendarEvents = data.events.map((event) => ({
         id: event.id,
-        title: event.summary,
-        datetime: event.start.dateTime || event.start.date,
-        description: event.description || 'No description available',
+        title: event.summary || event.subject,
+        datetime: event.start?.dateTime || event.start?.date || event.start,
+        description: event.description || event.body?.content || 'No description available',
       }));
       setNotifications(calendarEvents);
+      setError(null);
     } catch (err) {
+      console.error('Calendar refresh error:', err);
       setError(err.message);
+      setNotifications([]);
     } finally {
       setIsProcessing(false);
     }
