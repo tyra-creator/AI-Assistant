@@ -52,17 +52,30 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) throw new Error('Unauthorized');
 
-    // Get user's calendar tokens
+    // Get user's calendar tokens with expiration info
     const { data: profile } = await supabase
       .from('profiles')
-      .select('google_access_token, microsoft_access_token')
+      .select('google_access_token, microsoft_access_token, google_refresh_token, microsoft_refresh_token, google_expires_at, microsoft_expires_at')
       .eq('user_id', user.id)
       .single();
 
     if (!profile) throw new Error('User profile not found');
-    const accessToken = profile.google_access_token || profile.microsoft_access_token;
+    
+    let accessToken = profile.google_access_token || profile.microsoft_access_token;
     const isMicrosoft = !!profile.microsoft_access_token;
     const apiBase = isMicrosoft ? 'https://graph.microsoft.com/v1.0/me' : 'https://www.googleapis.com/calendar/v3';
+    
+    // Check token expiration and refresh if needed
+    if (!isMicrosoft && profile.google_expires_at) {
+      const expiryTime = new Date(profile.google_expires_at);
+      const now = new Date();
+      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+      
+      if (expiryTime <= fiveMinutesFromNow && profile.google_refresh_token) {
+        console.log('Google token expiring soon, refreshing...');
+        accessToken = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token);
+      }
+    }
 
     if (!accessToken) {
       return new Response(JSON.stringify({
@@ -199,12 +212,20 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
   // Handle different types of errors more gracefully
   if (res.status === 401) {
     console.error('Authentication error - token may be expired');
-    throw new Error('Authentication failed. Please reconnect your calendar.');
+    return new Response(JSON.stringify({
+      error: 'Authentication failed. Please reconnect your calendar.',
+      needsAuth: true,
+      success: false
+    }), { status: 401, headers: corsHeaders });
   }
 
   if (res.status === 403) {
     console.error('Permission error');
-    throw new Error('Permission denied. Please check your calendar permissions.');
+    return new Response(JSON.stringify({
+      error: 'Permission denied. Please check your calendar permissions.',
+      needsAuth: false,
+      success: false
+    }), { status: 403, headers: corsHeaders });
   }
 
   // For other errors, log but don't necessarily fail
@@ -323,6 +344,47 @@ async function checkAvailability(apiBase: string, token: string, isMicrosoft: bo
     if (!res.ok) throw new Error(data.error?.message || 'Failed to check availability');
 
     const available = Object.values(data.calendars).every((c: any) => c.busy.length === 0);
-    return new Response(JSON.stringify({ available, details: data.calendars }), { headers: corsHeaders });
+  return new Response(JSON.stringify({ available, details: data.calendars }), { headers: corsHeaders });
+  }
+}
+
+// Token refresh utility function
+async function refreshGoogleToken(supabase: any, userId: string, refreshToken: string): Promise<string> {
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
+        client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to refresh Google token:', await response.text());
+      throw new Error('Token refresh failed');
+    }
+
+    const data = await response.json();
+    const newAccessToken = data.access_token;
+    const expiresIn = data.expires_in || 3600; // Default to 1 hour
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Update the database with new token
+    await supabase
+      .from('profiles')
+      .update({
+        google_access_token: newAccessToken,
+        google_expires_at: expiresAt.toISOString(),
+      })
+      .eq('user_id', userId);
+
+    console.log('Google token refreshed successfully');
+    return newAccessToken;
+  } catch (error) {
+    console.error('Error refreshing Google token:', error);
+    throw new Error('Authentication failed. Please reconnect your Google account.');
   }
 }

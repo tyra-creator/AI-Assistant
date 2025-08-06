@@ -168,12 +168,18 @@ function extractMeetingDetails(message: string, state: any) {
 
   console.log('Starting extraction with existing:', existing);
 
-  // Enhanced time patterns with better specificity
+// Enhanced time patterns with better range and timezone support
   const timePatterns = [
-    /\b(today|tomorrow)\s+at\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
-    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow)\b/gi,
-    /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
-    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi
+    // Time ranges with timezone
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s*[-–]\s*(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
+    // Time ranges without timezone  
+    /\b(\d{1,2})(:\d{2})?\s*[-–]\s*(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
+    // Day + time patterns
+    /\b(today|tomorrow)\s+at\s+(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
+    // Basic time patterns
+    /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi
   ];
 
   // Extract time if not already found
@@ -330,13 +336,22 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
   }
 }
 
-// Helper function to convert time strings to ISO format
+// Helper function to convert time strings to ISO format with enhanced parsing
 function convertToISODateTime(timeString: string): string {
   const now = new Date();
   const today = now.toISOString().split('T')[0]; // Get YYYY-MM-DD
   
+  // Enhanced parsing for time ranges - take the first time
+  let processedTimeString = timeString;
+  
+  // Handle time ranges by extracting the start time
+  const rangeMatch = timeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)\s*[-–]/i);
+  if (rangeMatch) {
+    processedTimeString = rangeMatch[0].replace(/[-–]$/, '').trim();
+  }
+  
   // Parse time from various formats
-  const timeMatch = timeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/i);
+  const timeMatch = processedTimeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/i);
   if (!timeMatch) {
     // Default to current time + 1 hour if parsing fails
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
@@ -359,7 +374,15 @@ function convertToISODateTime(timeString: string): string {
     targetDate = tomorrow.toISOString().split('T')[0];
   }
   
-  return `${targetDate}T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
+  // Handle timezone offsets (basic support for CAT = UTC+2)
+  let offsetHours = 0;
+  if (timeString.includes('CAT')) {
+    offsetHours = -2; // CAT is UTC+2, so we subtract 2 to get UTC
+  }
+  
+  const finalHour = Math.max(0, Math.min(23, hour + offsetHours));
+  
+  return `${targetDate}T${finalHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
 }
 
 // Helper function to add one hour to a datetime string
