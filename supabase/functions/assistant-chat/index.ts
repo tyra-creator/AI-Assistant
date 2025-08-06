@@ -213,41 +213,93 @@ function isMeetingRequest(message: string): boolean {
 }
 
 function extractMeetingDetails(message: string, currentDetails: any): any {
+  console.log(`Extracting meeting details from: "${message}"`);
   const details = { ...currentDetails };
 
-  // Extract key-value pairs (title:... time:...)
-  const keyValuePairs = message.match(/(\w+)\s*:\s*([^,\n]+)/g);
+  // Handle key-value pairs like "Title:Sales Meeting Today 4pm"
+  const keyValuePairs = message.match(/(\w+)\s*:\s*(.+)/gi);
   if (keyValuePairs) {
+    console.log(`Found key-value pairs: ${JSON.stringify(keyValuePairs)}`);
     keyValuePairs.forEach(pair => {
-      const [key, value] = pair.split(':').map(s => s.trim());
-      const lowerKey = key.toLowerCase();
-      if (lowerKey === 'title' || lowerKey === 'name') {
-        details.title = value;
-      } else if (lowerKey === 'time' || lowerKey === 'when' || lowerKey === 'date') {
-        details.time = value;
+      const colonIndex = pair.indexOf(':');
+      if (colonIndex > 0) {
+        const key = pair.substring(0, colonIndex).trim().toLowerCase();
+        const value = pair.substring(colonIndex + 1).trim();
+        
+        console.log(`Processing key-value: ${key} = ${value}`);
+        
+        if (key === 'title' || key === 'name' || key === 'meeting') {
+          // Check if the title contains time info
+          const timeInTitle = extractTimeFromText(value);
+          if (timeInTitle && !details.time) {
+            details.time = timeInTitle;
+            // Remove time from title
+            details.title = value.replace(new RegExp(escapeRegex(timeInTitle), 'i'), '').trim();
+          } else {
+            details.title = value;
+          }
+        } else if (key === 'time' || key === 'when' || key === 'date') {
+          details.time = value;
+        }
       }
     });
   }
 
-  // Extract time patterns - improved regex for various formats
+  // Extract standalone time patterns
   if (!details.time) {
-    // Match patterns like "today 4pm", "Tomorrow 2-3pm", "4pm CAT", etc.
-    const timePatterns = [
-      /(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)/i,
-      /\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*(?:CAT|UTC|EST|PST|GMT)?/i,
-      /\d{1,2}(?::\d{2})?\s*(?:to|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)/i
+    details.time = extractTimeFromText(message);
+  }
+
+  // Extract standalone title if not found in key-value pairs
+  if (!details.title && !keyValuePairs) {
+    // Look for meeting title patterns
+    const titlePatterns = [
+      /(?:meeting|call|appointment|session)\s+(.+)/i,
+      /(.+?)\s+(?:meeting|call|appointment|session)/i
     ];
     
-    for (const pattern of timePatterns) {
-      const timeMatch = message.match(pattern);
-      if (timeMatch) {
-        details.time = timeMatch[0];
-        break;
+    for (const pattern of titlePatterns) {
+      const titleMatch = message.match(pattern);
+      if (titleMatch && titleMatch[1]) {
+        const potentialTitle = titleMatch[1].trim();
+        // Make sure it's not just time info
+        if (!extractTimeFromText(potentialTitle)) {
+          details.title = potentialTitle;
+          break;
+        }
       }
     }
   }
 
+  console.log(`Extracted details: ${JSON.stringify(details)}`);
   return details;
+}
+
+function extractTimeFromText(text: string): string | null {
+  // Comprehensive time patterns
+  const timePatterns = [
+    // "today 4pm", "tomorrow 2pm", etc.
+    /(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)/i,
+    // "4pm CAT", "2:30pm EST", etc.
+    /\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*(?:CAT|UTC|EST|PST|GMT|CET|WAT)?/i,
+    // "2-3pm", "10:00-11:00am", etc.
+    /\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:to|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)/i,
+    // "at 4pm", "at 2:30", etc.
+    /(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)/i
+  ];
+  
+  for (const pattern of timePatterns) {
+    const timeMatch = text.match(pattern);
+    if (timeMatch) {
+      return timeMatch[0].trim();
+    }
+  }
+  
+  return null;
+}
+
+function escapeRegex(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function validateMeetingDetails(details: any): Array<{label: string, example: string}> {
