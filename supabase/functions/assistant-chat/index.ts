@@ -86,7 +86,7 @@ async function processMessage(message: string, state: any, sessionId: string | n
   console.log('Current state:', JSON.stringify(state, null, 2));
 
   // Extract proper state structure - handle both frontend and backend formats
-  const currentState = state.meetingContext ? state : (state.state || {});
+  const currentState = state || {};
   const loopCount = currentState.loopCount || 0;
   
   // Loop prevention - break circular conversations

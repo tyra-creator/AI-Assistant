@@ -27,6 +27,8 @@ const Index = () => {
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
+  const [conversationState, setConversationState] = useState<any>({});
+  const [sessionId, setSessionId] = useState<string>('');
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const { toast } = useToast();
@@ -75,6 +77,11 @@ const Index = () => {
 
     getEvents();
 
+    // Initialize session ID
+    const newSessionId = 'session_' + Date.now();
+    setSessionId(newSessionId);
+    APIService.setConversationId(newSessionId);
+
     // Initialize speech services
     SpeechService.initialize();
   }, [navigate]);
@@ -122,13 +129,8 @@ const Index = () => {
       
       const requestBody = { 
         message: text,
-        conversation_state: conversationHistory.length > 0 ? { 
-          history: conversationHistory,
-          meetingContext: false,
-          partialDetails: {},
-          readyToConfirm: false
-        } : {},
-        session_id: APIService.getSessionId() || 'session_' + Date.now()
+        conversation_state: conversationState,
+        session_id: sessionId
       };
       console.log('Request body:', requestBody);
       
@@ -187,10 +189,10 @@ const Index = () => {
       // Add assistant response to conversation history
       setConversationHistory(prev => [...prev, { role: 'assistant', content: response }]);
       
-      // Update session state if provided
-      if (data.state && APIService.getSessionId()) {
-        // Store state for next request (this maintains context between messages)
-        console.log('Updating session state:', data.state);
+      // Update conversation state for next request
+      if (data.state) {
+        setConversationState(data.state);
+        console.log('Updated conversation state:', data.state);
       }
       
       speakResponse(response);
@@ -224,9 +226,12 @@ const Index = () => {
   };
 
   const resetConversation = () => {
-    // Reset session ID to start a new conversation
-    APIService.resetSession();
+    // Generate new session ID and reset state
+    const newSessionId = 'session_' + Date.now();
+    setSessionId(newSessionId);
+    APIService.setConversationId(newSessionId);
     setConversationHistory([]);
+    setConversationState({});
     setActiveMessage("");
     SpeechService.stopSpeaking(); // Stop any ongoing speech
     toast({
