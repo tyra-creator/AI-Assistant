@@ -133,6 +133,8 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
     throw new Error('Missing required fields: title, start, or end');
   }
 
+  console.log(`Creating ${isMicrosoft ? 'Microsoft' : 'Google'} calendar event:`, event.title);
+
   const payload = isMicrosoft ? {
     subject: event.title,
     body: { contentType: 'HTML', content: event.description || '' },
@@ -158,10 +160,50 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
     body: JSON.stringify(payload)
   });
 
+  console.log(`Calendar API response status: ${res.status}`);
+  
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Failed to create event');
+  console.log('Calendar API response data:', data);
 
-  return new Response(JSON.stringify({ message: 'Event created', event: data }), { headers: corsHeaders });
+  // Check for successful creation - Google returns 200, Microsoft returns 201
+  if (res.status === 200 || res.status === 201) {
+    // Event was created successfully
+    console.log('Event created successfully:', data.id || data.iCalUId);
+    return new Response(JSON.stringify({ 
+      message: 'Event created successfully', 
+      event: data,
+      success: true 
+    }), { headers: corsHeaders });
+  }
+
+  // Handle different types of errors more gracefully
+  if (res.status === 401) {
+    console.error('Authentication error - token may be expired');
+    throw new Error('Authentication failed. Please reconnect your calendar.');
+  }
+
+  if (res.status === 403) {
+    console.error('Permission error');
+    throw new Error('Permission denied. Please check your calendar permissions.');
+  }
+
+  // For other errors, log but don't necessarily fail
+  console.error(`Calendar API error (${res.status}):`, data);
+  
+  // Check if the error is about an already existing event or similar non-critical issue
+  const errorMessage = data.error?.message || data.message || 'Unknown error';
+  if (errorMessage.toLowerCase().includes('already exists') || 
+      errorMessage.toLowerCase().includes('duplicate')) {
+    console.log('Event might already exist, treating as success');
+    return new Response(JSON.stringify({ 
+      message: 'Event created (or already exists)', 
+      event: data,
+      success: true 
+    }), { headers: corsHeaders });
+  }
+
+  // Only throw for genuine creation failures
+  throw new Error(errorMessage);
 }
 
 // UPDATE EVENT
