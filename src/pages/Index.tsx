@@ -17,6 +17,7 @@ import { fetchCalendarEvents } from '@/services/APIService';
 import { supabase } from '@/integrations/supabase/client';
 import { UserProfileDropdown } from '@/components/UserProfileDropdown';
 import { useOAuthTokens } from '@/hooks/useOAuthTokens';
+import { useAuth } from '@/hooks/useAuth';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -33,21 +34,19 @@ const Index = () => {
   const [error, setError] = useState(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { session, isAuthenticated, loading } = useAuth();
   
   // Initialize OAuth token extraction
   useOAuthTokens();
 
   useEffect(() => {
     // Check if user is authenticated
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate('/login');
-        return;
-      }
-    };
+    if (!loading && !isAuthenticated) {
+      navigate('/login');
+      return;
+    }
 
-    checkAuth();
+    if (!isAuthenticated) return;
 
     const getEvents = async () => {
       try {
@@ -84,7 +83,7 @@ const Index = () => {
 
     // Initialize speech services
     SpeechService.initialize();
-  }, [navigate]);
+  }, [navigate, loading, isAuthenticated]);
 
   const toggleListening = () => {
     if (isListening) {
@@ -134,13 +133,20 @@ const Index = () => {
       };
       console.log('Request body:', requestBody);
       
+      // Get user session token
+      if (!session?.access_token) {
+        setActiveMessage("❌ Please log in to use the assistant.");
+        setIsProcessing(false);
+        return;
+      }
+
       // First, test if function is deployed with health check
       console.log('Testing function deployment...');
       try {
         const healthCheck = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/assistant-chat', {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnFzc3Z5cHZ3bmVkcGF5bHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1MTY1MjgsImV4cCI6MjA2OTA5MjUyOH0.zEo80CWmBR38anzKkcvZmXui7uvEQVhO9g_B7Q7WOmw`,
+            'Authorization': `Bearer ${session.access_token}`,
           }
         });
         
@@ -157,13 +163,13 @@ const Index = () => {
         return;
       }
 
-      // Use direct fetch call since supabase.functions.invoke is having issues
+      // Use direct fetch call with user session token
       console.log('Calling function directly via fetch...');
       
       const functionResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/assistant-chat', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnFzc3Z5cHZ3bmVkcGF5bHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1MTY1MjgsImV4cCI6MjA2OTA5MjUyOH0.zEo80CWmBR38anzKkcvZmXui7uvEQVhO9g_B7Q7WOmw`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
