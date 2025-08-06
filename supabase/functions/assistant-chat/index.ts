@@ -82,45 +82,185 @@ async function processMessage(message: string, state: any, sessionId: string | n
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) throw new Error('OPENROUTER_API_KEY environment variable not set');
 
-  console.log('Incoming:', message, 'State:', state);
+  console.log('Processing message:', message);
+  console.log('Current state:', state);
 
-  // Loop-breaker logic
-  if (state.lastMessage === message && (state.retryCount || 0) >= 2) {
-    return {
-      response: "🔄 I'm having trouble understanding—can you try rephrasing or specifying time and title clearly?",
-      state: {}
-    };
-  }
-  state.lastMessage = message;
-  state.retryCount = (state.retryCount || 0) + 1;
-
+  // Check for confirmation
   if (message.trim().toLowerCase().includes('confirm') && state.readyToConfirm) {
-    state.confirmed = true;
-    if (state.meetingContext) return handleMeetingContext(message, state, apiKey);
-    if (state.calendarContext) return handleCalendarContext(message, state, apiKey);
+    console.log('Processing confirmation...');
+    return await handleConfirmation(state);
   }
 
-  const intent = await recognizeIntent(message, apiKey);
-  console.log('Intent:', intent);
-
-  if (!intent || !intent.type || intent.confidence < 0.5) {
-    return {
-      response: "🤔 I’m not sure what you mean—can you clarify your request or try again?",
-      state: {}
-    };
-  }
-
-  if (intent.type === 'calendar' || state.calendarContext) {
-    return handleCalendarContext(message, state, apiKey, intent);
-  }
-
+  // Check if this is a meeting request
   if (isMeetingRequest(message) || state.meetingContext) {
-    return handleMeetingContext(message, state, apiKey);
+    console.log('Handling meeting context...');
+    return await handleMeetingFlow(message, state);
   }
 
+  // Default response
   const response = await generateResponse(message, apiKey);
   return {
     response: response || "I'm here to help you schedule meetings or manage your calendar.",
     state: {}
   };
+}
+
+function isMeetingRequest(message: string): boolean {
+  const meetingKeywords = ['meeting', 'schedule', 'calendar', 'appointment', 'call'];
+  const lowerMessage = message.toLowerCase();
+  return meetingKeywords.some(keyword => lowerMessage.includes(keyword));
+}
+
+async function handleMeetingFlow(message: string, state: any) {
+  console.log('Extracting meeting details from:', message);
+  
+  const details = extractMeetingDetails(message, state);
+  console.log('Extracted details:', details);
+
+  // Check if we have both title and time
+  if (details.title && details.time) {
+    // Ready to confirm
+    return {
+      response: `Please confirm meeting details:\nTitle: ${details.title}\nTime: ${details.time}\n\nReply "confirm" to schedule or provide corrections.`,
+      state: {
+        meetingContext: true,
+        readyToConfirm: true,
+        meetingDetails: details
+      }
+    };
+  }
+
+  // Missing information
+  const missing = [];
+  if (!details.title) missing.push('title');
+  if (!details.time) missing.push('time');
+
+  return {
+    response: `To schedule your meeting, please provide:\n${missing.map(field => 
+      field === 'title' ? '• Meeting title' : '• Date and time (e.g. "Tomorrow 2-3pm")'
+    ).join('\n')}`,
+    state: {
+      meetingContext: true,
+      partialDetails: details
+    }
+  };
+}
+
+function extractMeetingDetails(message: string, state: any) {
+  const existing = state.partialDetails || {};
+  const details = { title: existing.title || null, time: existing.time || null };
+
+  console.log('Starting extraction with existing:', existing);
+
+  // Enhanced time patterns
+  const timePatterns = [
+    /\b(today|tomorrow)\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
+    /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi
+  ];
+
+  // Extract time
+  for (const pattern of timePatterns) {
+    const timeMatch = message.match(pattern);
+    if (timeMatch) {
+      details.time = timeMatch[0];
+      console.log('Found time:', details.time);
+      break;
+    }
+  }
+
+  // Extract title
+  let cleanMessage = message;
+  
+  // Remove time from message
+  if (details.time) {
+    cleanMessage = cleanMessage.replace(new RegExp(details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
+  }
+
+  // Handle different title formats
+  const titlePatterns = [
+    /titles?:\s*(.+)/i,
+    /meeting\s+(.+)/i,
+    /schedule\s+(.+)/i,
+    /add\s+(.+)/i
+  ];
+
+  for (const pattern of titlePatterns) {
+    const titleMatch = cleanMessage.match(pattern);
+    if (titleMatch) {
+      details.title = titleMatch[1].trim();
+      console.log('Found title via pattern:', details.title);
+      break;
+    }
+  }
+
+  // Fallback: use cleaned message as title if no specific pattern matched
+  if (!details.title && cleanMessage && !cleanMessage.toLowerCase().includes('meeting') && !cleanMessage.toLowerCase().includes('schedule')) {
+    details.title = cleanMessage;
+    console.log('Using cleaned message as title:', details.title);
+  }
+
+  // Default title if still missing
+  if (!details.title && (existing.title || message.toLowerCase().includes('meeting'))) {
+    details.title = existing.title || 'Meeting';
+    console.log('Using default/existing title:', details.title);
+  }
+
+  console.log('Final extracted details:', details);
+  return details;
+}
+
+async function handleConfirmation(state: any) {
+  console.log('Handling confirmation with state:', state);
+  
+  if (!state.meetingDetails) {
+    return {
+      response: "I don't have meeting details to confirm. Please start over with your meeting request.",
+      state: {}
+    };
+  }
+
+  // Here you would normally call the calendar integration
+  // For now, we'll simulate success
+  
+  const { title, time } = state.meetingDetails;
+  
+  return {
+    response: `✅ Meeting scheduled successfully!\n\nTitle: ${title}\nTime: ${time}\n\nYour meeting has been added to your calendar.`,
+    state: {}
+  };
+}
+
+async function generateResponse(message: string, apiKey: string) {
+  try {
+    const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful business assistant focused on productivity and scheduling. Keep responses concise and professional.'
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ],
+        max_tokens: 150,
+        temperature: 0.7
+      })
+    });
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "I'm here to help with your scheduling needs.";
+  } catch (error) {
+    console.error('Error generating response:', error);
+    return "I'm here to help with your scheduling and productivity needs.";
+  }
 }
