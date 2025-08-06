@@ -162,7 +162,27 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
 
   console.log(`Calendar API response status: ${res.status}`);
   
-  const data = await res.json();
+  // Safe JSON parsing to handle non-JSON responses
+  let data;
+  try {
+    const responseText = await res.text();
+    console.log('Calendar API response text:', responseText);
+    
+    if (responseText.trim()) {
+      data = JSON.parse(responseText);
+    } else {
+      data = { message: 'Empty response from calendar API' };
+    }
+  } catch (jsonError) {
+    console.error('Failed to parse JSON response:', jsonError);
+    data = { 
+      error: { 
+        message: `Invalid JSON response from calendar API (Status: ${res.status})`,
+        statusText: res.statusText 
+      } 
+    };
+  }
+  
   console.log('Calendar API response data:', data);
 
   // Check for successful creation - Google returns 200, Microsoft returns 201
