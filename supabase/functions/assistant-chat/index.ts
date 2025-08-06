@@ -245,33 +245,66 @@ function extractMeetingDetails(message: string, currentDetails: any): any {
     });
   }
 
-  // Extract standalone time patterns
+  // Extract standalone time patterns FIRST
   if (!details.time) {
     details.time = extractTimeFromText(message);
+    console.log(`Extracted time from message: ${details.time}`);
   }
 
-  // Extract standalone title if not found in key-value pairs
-  if (!details.title && !keyValuePairs) {
-    // Look for meeting title patterns
-    const titlePatterns = [
-      /(?:meeting|call|appointment|session)\s+(.+)/i,
-      /(.+?)\s+(?:meeting|call|appointment|session)/i
-    ];
+  // Extract title - if not found in key-value pairs, try to infer
+  if (!details.title) {
+    // Try to extract title from common patterns
+    let titleCandidates = [];
     
-    for (const pattern of titlePatterns) {
-      const titleMatch = message.match(pattern);
-      if (titleMatch && titleMatch[1]) {
-        const potentialTitle = titleMatch[1].trim();
-        // Make sure it's not just time info
-        if (!extractTimeFromText(potentialTitle)) {
-          details.title = potentialTitle;
-          break;
+    // Pattern 1: "sales meeting today 4pm" -> title should be "sales meeting"
+    if (details.time) {
+      const messageWithoutTime = message.replace(new RegExp(escapeRegex(details.time), 'i'), '').trim();
+      if (messageWithoutTime.length > 0) {
+        titleCandidates.push(messageWithoutTime);
+      }
+    }
+    
+    // Pattern 2: Look for explicit meeting words
+    const meetingWords = ['meeting', 'call', 'appointment', 'session', 'sync', 'standup', 'review'];
+    for (const word of meetingWords) {
+      const regex = new RegExp(`(.+?)\\s*${word}|${word}\\s*(.+?)`, 'i');
+      const match = message.match(regex);
+      if (match) {
+        const candidate = (match[1] || match[2] || '').trim();
+        if (candidate && candidate.length > 0 && !extractTimeFromText(candidate)) {
+          titleCandidates.push(`${candidate} ${word}`);
         }
       }
     }
+    
+    // Pattern 3: If message looks like a title (no obvious commands)
+    if (titleCandidates.length === 0 && !message.toLowerCase().match(/\b(add|create|schedule|set)\b/)) {
+      const cleanMessage = message.replace(/\b(today|tomorrow|at|for)\b/gi, '').trim();
+      if (cleanMessage.length > 0 && !extractTimeFromText(cleanMessage)) {
+        titleCandidates.push(cleanMessage);
+      }
+    }
+    
+    // Use the first reasonable candidate
+    if (titleCandidates.length > 0) {
+      details.title = titleCandidates[0].trim();
+    }
+    
+    console.log(`Title candidates: ${JSON.stringify(titleCandidates)}, selected: ${details.title}`);
   }
 
-  console.log(`Extracted details: ${JSON.stringify(details)}`);
+  // If still no title, try a fallback based on common meeting patterns
+  if (!details.title) {
+    if (message.toLowerCase().includes('meeting')) {
+      details.title = 'Meeting';
+    } else if (message.toLowerCase().includes('call')) {
+      details.title = 'Call';
+    } else {
+      details.title = 'Event';
+    }
+  }
+
+  console.log(`Final extracted details: ${JSON.stringify(details)}`);
   return details;
 }
 
