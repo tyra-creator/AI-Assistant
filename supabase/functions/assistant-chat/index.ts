@@ -216,18 +216,35 @@ function extractMeetingDetails(message: string, currentDetails: any): any {
   const details = { ...currentDetails };
 
   // Extract key-value pairs (title:... time:...)
-  const keyValuePairs = message.match(/(\w+)\s*:\s*([^,]+)/g);
+  const keyValuePairs = message.match(/(\w+)\s*:\s*([^,\n]+)/g);
   if (keyValuePairs) {
     keyValuePairs.forEach(pair => {
       const [key, value] = pair.split(':').map(s => s.trim());
-      details[key.toLowerCase()] = value;
+      const lowerKey = key.toLowerCase();
+      if (lowerKey === 'title' || lowerKey === 'name') {
+        details.title = value;
+      } else if (lowerKey === 'time' || lowerKey === 'when' || lowerKey === 'date') {
+        details.time = value;
+      }
     });
   }
 
-  // Extract time if not already set - Fixed regex
+  // Extract time patterns - improved regex for various formats
   if (!details.time) {
-    const timeMatch = message.match(/(\d{1,2}(:\d{2})?\s*(am|pm)?\s*(?:to|-)\s*\d{1,2}(:\d{2})?\s*(am|pm)?)/i);
-    if (timeMatch) details.time = timeMatch[0];
+    // Match patterns like "today 4pm", "Tomorrow 2-3pm", "4pm CAT", etc.
+    const timePatterns = [
+      /(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)/i,
+      /\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*(?:CAT|UTC|EST|PST|GMT)?/i,
+      /\d{1,2}(?::\d{2})?\s*(?:to|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)/i
+    ];
+    
+    for (const pattern of timePatterns) {
+      const timeMatch = message.match(pattern);
+      if (timeMatch) {
+        details.time = timeMatch[0];
+        break;
+      }
+    }
   }
 
   return details;
