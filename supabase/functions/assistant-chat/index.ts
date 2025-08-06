@@ -83,18 +83,32 @@ async function processMessage(message: string, state: any, sessionId: string | n
   if (!apiKey) throw new Error('OPENROUTER_API_KEY environment variable not set');
 
   console.log('Processing message:', message);
-  console.log('Current state:', state);
+  console.log('Current state:', JSON.stringify(state, null, 2));
 
-  // Check for confirmation
-  if (message.trim().toLowerCase().includes('confirm') && state.readyToConfirm) {
+  // Extract proper state structure - handle both frontend and backend formats
+  const currentState = state.meetingContext ? state : (state.state || {});
+  const loopCount = currentState.loopCount || 0;
+  
+  // Loop prevention - break circular conversations
+  if (loopCount > 3) {
+    console.log('Breaking loop at count:', loopCount);
+    return {
+      response: "Let me help you start fresh. Please tell me what kind of meeting you'd like to schedule.",
+      state: {}
+    };
+  }
+
+  // Improved confirmation detection - exact word matching
+  const isConfirmation = /\b(confirm|yes|ok|correct)\b/i.test(message.trim());
+  if (isConfirmation && currentState.readyToConfirm) {
     console.log('Processing confirmation...');
-    return await handleConfirmation(state);
+    return await handleConfirmation(currentState);
   }
 
   // Check if this is a meeting request
-  if (isMeetingRequest(message) || state.meetingContext) {
+  if (isMeetingRequest(message) || currentState.meetingContext) {
     console.log('Handling meeting context...');
-    return await handleMeetingFlow(message, state);
+    return await handleMeetingFlow(message, { ...currentState, loopCount: loopCount + 1 });
   }
 
   // Default response
@@ -152,59 +166,76 @@ function extractMeetingDetails(message: string, state: any) {
 
   console.log('Starting extraction with existing:', existing);
 
-  // Enhanced time patterns
+  // Enhanced time patterns with better specificity
   const timePatterns = [
-    /\b(today|tomorrow)\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
-    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
-    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
-    /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi
+    /\b(today|tomorrow)\s+at\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow)\b/gi,
+    /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi,
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\b/gi
   ];
 
-  // Extract time
-  for (const pattern of timePatterns) {
-    const timeMatch = message.match(pattern);
-    if (timeMatch) {
-      details.time = timeMatch[0];
-      console.log('Found time:', details.time);
-      break;
+  // Extract time if not already found
+  if (!details.time) {
+    for (const pattern of timePatterns) {
+      const timeMatch = message.match(pattern);
+      if (timeMatch) {
+        details.time = timeMatch[0].trim();
+        console.log('Found time:', details.time);
+        break;
+      }
     }
   }
 
-  // Extract title
+  // Clean message for title extraction
   let cleanMessage = message;
   
-  // Remove time from message
+  // Remove command words and time
+  const wordsToRemove = ['add', 'schedule', 'set', 'create', 'book', 'a', 'an', 'the', 'meeting', 'appointment'];
+  cleanMessage = cleanMessage.replace(new RegExp(`\\b(${wordsToRemove.join('|')})\\b`, 'gi'), '').trim();
+  
   if (details.time) {
     cleanMessage = cleanMessage.replace(new RegExp(details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
   }
 
-  // Handle different title formats
+  // Improved title extraction patterns
   const titlePatterns = [
-    /titles?:\s*(.+)/i,
-    /meeting\s+(.+)/i,
-    /schedule\s+(.+)/i,
-    /add\s+(.+)/i
+    /titles?:\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    /(?:meeting|appointment)\s+(?:for|about|regarding)?\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    /^(.+?)(?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i
   ];
 
-  for (const pattern of titlePatterns) {
-    const titleMatch = cleanMessage.match(pattern);
-    if (titleMatch) {
-      details.title = titleMatch[1].trim();
-      console.log('Found title via pattern:', details.title);
-      break;
+  // Extract title if not already found
+  if (!details.title) {
+    for (const pattern of titlePatterns) {
+      const titleMatch = cleanMessage.match(pattern);
+      if (titleMatch && titleMatch[1] && titleMatch[1].trim()) {
+        let extractedTitle = titleMatch[1].trim();
+        
+        // Clean up extracted title
+        extractedTitle = extractedTitle.replace(/^(to|my|calendar|on|for)\s+/i, '');
+        extractedTitle = extractedTitle.replace(/\s+(meeting|appointment)$/i, '');
+        
+        if (extractedTitle.length > 2) {
+          details.title = extractedTitle;
+          console.log('Found title via pattern:', details.title);
+          break;
+        }
+      }
     }
   }
 
-  // Fallback: use cleaned message as title if no specific pattern matched
-  if (!details.title && cleanMessage && !cleanMessage.toLowerCase().includes('meeting') && !cleanMessage.toLowerCase().includes('schedule')) {
-    details.title = cleanMessage;
-    console.log('Using cleaned message as title:', details.title);
+  // Use existing title if still missing
+  if (!details.title && existing.title) {
+    details.title = existing.title;
+    console.log('Using existing title:', details.title);
   }
 
-  // Default title if still missing
-  if (!details.title && (existing.title || message.toLowerCase().includes('meeting'))) {
-    details.title = existing.title || 'Meeting';
-    console.log('Using default/existing title:', details.title);
+  // Final validation and cleanup
+  if (details.title) {
+    details.title = details.title.replace(/^[^a-zA-Z0-9]*|[^a-zA-Z0-9]*$/g, '').trim();
+    if (details.title.length < 2) {
+      details.title = null;
+    }
   }
 
   console.log('Final extracted details:', details);

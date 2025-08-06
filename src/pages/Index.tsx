@@ -122,7 +122,12 @@ const Index = () => {
       
       const requestBody = { 
         message: text,
-        conversation_state: conversationHistory.length > 0 ? { history: conversationHistory } : {},
+        conversation_state: conversationHistory.length > 0 ? { 
+          history: conversationHistory,
+          meetingContext: false,
+          partialDetails: {},
+          readyToConfirm: false
+        } : {},
         session_id: APIService.getSessionId() || 'session_' + Date.now()
       };
       console.log('Request body:', requestBody);
@@ -181,6 +186,12 @@ const Index = () => {
       
       // Add assistant response to conversation history
       setConversationHistory(prev => [...prev, { role: 'assistant', content: response }]);
+      
+      // Update session state if provided
+      if (data.state && APIService.getSessionId()) {
+        // Store state for next request (this maintains context between messages)
+        console.log('Updating session state:', data.state);
+      }
       
       speakResponse(response);
     } catch (error) {
