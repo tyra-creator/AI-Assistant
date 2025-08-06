@@ -42,13 +42,34 @@ export class APIService {
 
       if (error) {
         console.error('Error from calendar function:', error);
-        throw error;
+        return {
+          events: [],
+          needsAuth: true,
+          error: error.message || 'Calendar integration error'
+        };
       }
 
-      return data?.events || [];
+      // Handle different response structures
+      if (data?.needsAuth) {
+        return {
+          events: [],
+          needsAuth: true,
+          error: data.error || data.message || 'Authentication required'
+        };
+      }
+
+      return {
+        events: data?.events || [],
+        needsAuth: false,
+        error: null
+      };
     } catch (error) {
       console.error('Error fetching calendar events:', error);
-      throw error;
+      return {
+        events: [],
+        needsAuth: true,
+        error: error.message || 'Failed to fetch calendar events'
+      };
     }
   }
 

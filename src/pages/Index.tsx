@@ -48,25 +48,29 @@ const Index = () => {
     checkAuth();
 
     const getEvents = async () => {
-    try {
-      const data = await fetchCalendarEvents();
-      if (data.needsAuth) {
-        setError('Please connect your calendar account to view events');
+      try {
+        const response = await APIService.fetchCalendarEvents();
+        console.log('Calendar response:', response);
+        
+        if (response.needsAuth) {
+          setNotifications([]);
+          setError(response.error || 'Please connect your calendar account to view events');
+          return;
+        }
+        
+        const calendarEvents = (response.events || []).map((event) => ({
+          id: event.id,
+          title: event.summary || event.subject,
+          datetime: event.start?.dateTime || event.start?.date || event.start,
+          description: event.description || event.body?.content || 'No description available',
+        }));
+        setNotifications(calendarEvents);
+        setError(null);
+      } catch (err) {
+        console.error('Calendar fetch error:', err);
+        setError(err.message || 'Failed to fetch calendar events');
         setNotifications([]);
-        return;
       }
-      const calendarEvents = data.events.map((event) => ({
-        id: event.id,
-        title: event.summary || event.subject,
-        datetime: event.start?.dateTime || event.start?.date || event.start,
-        description: event.description || event.body?.content || 'No description available',
-      }));
-      setNotifications(calendarEvents);
-    } catch (err) {
-      console.error('Calendar fetch error:', err);
-      setError(err.message);
-      setNotifications([]);
-    }
     };
 
     getEvents();
@@ -223,9 +227,9 @@ const Index = () => {
   const refreshEvents = async () => {
     setIsProcessing(true);
     try {
-      const data = await fetchCalendarEvents();
-      if (data.needsAuth) {
-        setError('Please connect your calendar account to view events');
+      const response = await APIService.fetchCalendarEvents();
+      if (response.needsAuth) {
+        setError(response.error || 'Please connect your calendar account to view events');
         setNotifications([]);
         toast({
           title: "Calendar Connection Required",
@@ -234,7 +238,7 @@ const Index = () => {
         });
         return;
       }
-      const calendarEvents = data.events.map((event) => ({
+      const calendarEvents = (response.events || []).map((event) => ({
         id: event.id,
         title: event.summary || event.subject,
         datetime: event.start?.dateTime || event.start?.date || event.start,
@@ -244,7 +248,7 @@ const Index = () => {
       setError(null);
     } catch (err) {
       console.error('Calendar refresh error:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to refresh calendar events');
       setNotifications([]);
     } finally {
       setIsProcessing(false);

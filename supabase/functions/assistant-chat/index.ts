@@ -242,16 +242,14 @@ function validateMeetingDetails(details: any): Array<{label: string, example: st
 }
 
 async function scheduleCalendarEvent(details: any): Promise<any> {
-  const calendarUrl = Deno.env.get('CALENDAR_FUNCTION_URL');
-  if (!calendarUrl) {
-    throw new Error('Calendar integration not configured');
-  }
-
+  const calendarUrl = `https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration`;
+  
   const response = await fetch(calendarUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+      'apikey': Deno.env.get('SUPABASE_ANON_KEY') || ''
     },
     body: JSON.stringify({
       action: 'create_event',
@@ -265,12 +263,17 @@ async function scheduleCalendarEvent(details: any): Promise<any> {
     })
   });
 
+  const responseData = await response.json();
+  
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to schedule event');
+    // Handle auth-related errors gracefully
+    if (responseData.needsAuth) {
+      throw new Error('Please connect your Google or Microsoft account to create calendar events.');
+    }
+    throw new Error(responseData.error || responseData.message || 'Failed to schedule event');
   }
 
-  return await response.json();
+  return responseData;
 }
 
 // Enhanced intent recognition using DeepSeek
@@ -607,19 +610,26 @@ function extractQueryParameters(message: string, entities: any = {}) {
 }
 
 async function callCalendarFunction(url: string, action: string, data: any) {
-  const response = await fetch(url, {
+  const calendarUrl = `https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration`;
+  
+  const response = await fetch(calendarUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+      'apikey': Deno.env.get('SUPABASE_ANON_KEY') || ''
     },
     body: JSON.stringify({ action, ...data })
   });
 
+  const responseData = await response.json();
+  
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Calendar operation failed');
+    if (responseData.needsAuth) {
+      throw new Error('Please connect your Google or Microsoft account to use calendar features.');
+    }
+    throw new Error(responseData.error || responseData.message || 'Calendar operation failed');
   }
 
-  return await response.json();
+  return responseData.events || responseData;
 }

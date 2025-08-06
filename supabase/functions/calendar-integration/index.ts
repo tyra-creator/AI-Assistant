@@ -108,7 +108,9 @@ serve(async (req) => {
         if (!response.ok) throw new Error(data.error?.message || 'Failed to fetch events');
 
         return new Response(JSON.stringify({
-          events: profile.microsoft_access_token ? data.value : data.items,
+          events: profile.microsoft_access_token ? (data.value || []) : (data.items || []),
+          needsAuth: false,
+          error: null
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -326,10 +328,18 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in calendar-integration function:', error);
+    
+    // Check if it's an auth-related error
+    const isAuthError = error.message?.includes('Unauthorized') || 
+                       error.message?.includes('token') ||
+                       error.message?.includes('auth');
+    
     return new Response(JSON.stringify({
+      events: [],
+      needsAuth: isAuthError,
       error: error.message || 'Internal server error',
     }), {
-      status: 500,
+      status: isAuthError ? 401 : 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
