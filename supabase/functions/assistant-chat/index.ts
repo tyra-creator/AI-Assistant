@@ -50,7 +50,9 @@ serve(async (req) => {
       });
     }
 
-    const reply = await processMessage(body.message, body.conversation_state || {}, body.session_id || null);
+    // Pass the authorization header for calendar integration
+    const authHeader = req.headers.get('Authorization');
+    const reply = await processMessage(body.message, body.conversation_state || {}, body.session_id || null, authHeader);
     return new Response(JSON.stringify(reply), { headers: corsHeaders });
 
   } catch (err) {
@@ -78,7 +80,7 @@ function errorResponse(error: string, status = 400, details: any = {}) {
   return new Response(JSON.stringify({ error, ...details }), { status, headers: corsHeaders });
 }
 
-async function processMessage(message: string, state: any, sessionId: string | null = null) {
+async function processMessage(message: string, state: any, sessionId: string | null = null, authHeader?: string | null) {
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) throw new Error('OPENROUTER_API_KEY environment variable not set');
 
@@ -102,7 +104,7 @@ async function processMessage(message: string, state: any, sessionId: string | n
   const isConfirmation = /\b(confirm|yes|ok|correct)\b/i.test(message.trim());
   if (isConfirmation && currentState.readyToConfirm) {
     console.log('Processing confirmation...');
-    return await handleConfirmation(currentState);
+    return await handleConfirmation(currentState, authHeader);
   }
 
   // Check if this is a meeting request
@@ -242,7 +244,7 @@ function extractMeetingDetails(message: string, state: any) {
   return details;
 }
 
-async function handleConfirmation(state: any) {
+async function handleConfirmation(state: any, authHeader?: string | null) {
   console.log('Handling confirmation with state:', state);
   
   if (!state.meetingDetails) {
@@ -261,13 +263,21 @@ async function handleConfirmation(state: any) {
     
     console.log(`Creating calendar event: ${title} from ${startTime} to ${endTime}`);
     
-    // Call the calendar integration function
+    // Call the calendar integration function with user's auth header
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Use user's auth header if available, otherwise fall back to service role
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    } else {
+      headers['Authorization'] = `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`;
+    }
+    
     const calendarResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         action: 'create_event',
         event: {
