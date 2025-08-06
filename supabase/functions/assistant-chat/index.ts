@@ -83,7 +83,8 @@ serve(async (req) => {
     // Process the message
     const response = await processMessage(
       requestBody.message,
-      requestBody.conversation_state || {}
+      requestBody.conversation_state || {},
+      requestBody.session_id || null
     );
 
     return new Response(JSON.stringify(response), {
@@ -103,15 +104,31 @@ serve(async (req) => {
   }
 });
 
-async function processMessage(message: string, state: any) {
+async function processMessage(message: string, state: any, sessionId: string | null = null) {
   // Initialize API key
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY environment variable not set');
   }
 
+  console.log('Processing message:', message);
+  console.log('Current state:', state);
+
+  // Handle confirmation in context
+  if (message.toLowerCase().includes('confirm') && state.readyToConfirm) {
+    state.confirmed = true;
+    // Re-process with confirmed state
+    if (state.meetingContext) {
+      return handleMeetingContext(message, state);
+    } else if (state.calendarContext) {
+      const intent = { type: 'calendar', action: state.action || 'create' };
+      return handleCalendarContext(message, state, intent);
+    }
+  }
+
   // Enhanced intent recognition using DeepSeek via OPENROUTER
   const intent = await recognizeIntent(message, apiKey);
+  console.log('Recognized intent:', intent);
   
   // Handle calendar-related intents
   if (intent.type === 'calendar' || state.calendarContext) {
@@ -132,9 +149,14 @@ async function processMessage(message: string, state: any) {
 }
 
 async function handleMeetingContext(message: string, state: any) {
+  console.log('Handling meeting context:', { message, state });
+  
   // Extract and validate meeting details
   const details = extractMeetingDetails(message, state.meetingDetails || {});
   const missing = validateMeetingDetails(details);
+
+  console.log('Meeting details:', details);
+  console.log('Missing fields:', missing);
 
   if (missing.length > 0) {
     return {
@@ -163,14 +185,17 @@ async function handleMeetingContext(message: string, state: any) {
   }
 
   // Schedule the meeting
+  console.log('Attempting to schedule meeting with details:', details);
   try {
     const result = await scheduleCalendarEvent(details);
+    console.log('Calendar event result:', result);
     return {
       response: `✅ Meeting scheduled: ${details.title} at ${details.time}`,
       details: result,
       state: {} // Reset context
     };
   } catch (error) {
+    console.error('Failed to schedule meeting:', error);
     return {
       response: "⚠️ Failed to schedule meeting. Please try again.",
       error: error.message,
@@ -354,8 +379,13 @@ async function handleCalendarContext(message: string, state: any, intent: any) {
 
 // Handle event creation
 async function handleCreateEvent(message: string, state: any, intent: any, calendarUrl: string) {
+  console.log('Handling create event:', { message, state, intent });
+  
   const details = extractEventDetails(message, state.eventDetails || {}, intent.entities);
   const missing = validateEventDetails(details);
+
+  console.log('Event details:', details);
+  console.log('Missing fields:', missing);
 
   if (missing.length > 0) {
     return {
@@ -384,14 +414,17 @@ async function handleCreateEvent(message: string, state: any, intent: any, calen
     };
   }
 
+  console.log('Attempting to create calendar event with details:', details);
   try {
     const result = await callCalendarFunction(calendarUrl, 'create_event', { event: details });
+    console.log('Calendar creation result:', result);
     return {
       response: `✅ Event created: ${details.title} on ${details.start}`,
       details: result,
       state: {}
     };
   } catch (error) {
+    console.error('Failed to create calendar event:', error);
     return {
       response: "⚠️ Failed to create event. Please try again.",
       error: error.message,
