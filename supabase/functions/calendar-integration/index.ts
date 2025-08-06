@@ -28,7 +28,9 @@ interface CalendarRequest {
       };
     };
   };
+  event_id?: string;
   eventId?: string;
+  updates?: any;
   attendeeEmails?: string[];
 }
 
@@ -168,6 +170,87 @@ serve(async (req) => {
         });
       }
 
+      case 'update_event': {
+        const eventId = requestData.event_id || requestData.eventId;
+        if (!eventId || !requestData.updates) {
+          throw new Error('Missing event ID or updates for event modification');
+        }
+
+        let updatePayload: any = requestData.updates;
+        
+        // Transform updates for Microsoft Graph API format
+        if (profile.microsoft_access_token) {
+          if (updatePayload.title) {
+            updatePayload.subject = updatePayload.title;
+            delete updatePayload.title;
+          }
+          if (updatePayload.start) {
+            updatePayload.start = { dateTime: updatePayload.start, timeZone: 'UTC' };
+          }
+          if (updatePayload.end) {
+            updatePayload.end = { dateTime: updatePayload.end, timeZone: 'UTC' };
+          }
+        } else {
+          // Transform for Google Calendar API
+          if (updatePayload.title) {
+            updatePayload.summary = updatePayload.title;
+            delete updatePayload.title;
+          }
+        }
+
+        const endpoint = profile.microsoft_access_token ?
+          `${apiBase}/calendar/events/${eventId}` :
+          `${apiBase}/calendars/primary/events/${eventId}`;
+
+        const response = await fetch(endpoint, {
+          method: profile.microsoft_access_token ? 'PATCH' : 'PUT',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updatePayload),
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'Failed to update event');
+
+        return new Response(JSON.stringify({
+          message: 'Event updated successfully',
+          event: data,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'delete_event': {
+        const eventId = requestData.event_id || requestData.eventId;
+        if (!eventId) {
+          throw new Error('Missing event ID for deletion');
+        }
+
+        const endpoint = profile.microsoft_access_token ?
+          `${apiBase}/calendar/events/${eventId}` :
+          `${apiBase}/calendars/primary/events/${eventId}`;
+
+        const response = await fetch(endpoint, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || 'Failed to delete event');
+        }
+
+        return new Response(JSON.stringify({
+          message: 'Event deleted successfully',
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       case 'check_availability': {
         if (!requestData.attendeeEmails || !requestData.start_date || !requestData.end_date) {
           throw new Error('Missing required parameters for availability check');
@@ -204,8 +287,29 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         } else {
-          // Google Calendar availability check implementation would go here
-          throw new Error('Availability check not implemented for Google Calendar');
+          // Google Calendar availability check implementation
+          const response = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              timeMin: requestData.start_date,
+              timeMax: requestData.end_date,
+              items: requestData.attendeeEmails.map(email => ({ id: email })),
+            }),
+          });
+
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error?.message || 'Failed to check availability');
+
+          return new Response(JSON.stringify({
+            available: Object.values(data.calendars).every((cal: any) => cal.busy.length === 0),
+            details: data.calendars
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
       }
 

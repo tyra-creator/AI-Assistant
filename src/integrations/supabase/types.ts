@@ -88,8 +88,16 @@ export type Database = {
           created_at: string
           email: string | null
           first_name: string | null
+          google_access_token: string | null
+          google_expires_at: string | null
+          google_refresh_token: string | null
+          google_user_info: Json | null
           id: string
           last_name: string | null
+          microsoft_access_token: string | null
+          microsoft_expires_at: string | null
+          microsoft_refresh_token: string | null
+          microsoft_user_info: Json | null
           updated_at: string
           user_id: string
         }
@@ -97,8 +105,16 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_name?: string | null
+          google_access_token?: string | null
+          google_expires_at?: string | null
+          google_refresh_token?: string | null
+          google_user_info?: Json | null
           id?: string
           last_name?: string | null
+          microsoft_access_token?: string | null
+          microsoft_expires_at?: string | null
+          microsoft_refresh_token?: string | null
+          microsoft_user_info?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -106,8 +122,16 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_name?: string | null
+          google_access_token?: string | null
+          google_expires_at?: string | null
+          google_refresh_token?: string | null
+          google_user_info?: Json | null
           id?: string
           last_name?: string | null
+          microsoft_access_token?: string | null
+          microsoft_expires_at?: string | null
+          microsoft_refresh_token?: string | null
+          microsoft_user_info?: Json | null
           updated_at?: string
           user_id?: string
         }
