@@ -35,11 +35,14 @@ interface CalendarRequest {
 }
 
 serve(async (req) => {
+  console.log('=== Calendar Integration Function Called ===');
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log('Initializing Supabase client...');
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') || '',
       Deno.env.get('SUPABASE_ANON_KEY') || '',
@@ -49,15 +52,26 @@ serve(async (req) => {
     );
 
     // Authenticate user
+    console.log('Authenticating user...');
     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    console.log('Auth result:', { hasUser: !!user, error: userError?.message });
     if (userError || !user) throw new Error('Unauthorized');
 
     // Get user's calendar tokens with expiration info
-    const { data: profile } = await supabase
+    console.log('Fetching user profile and tokens...');
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('google_access_token, microsoft_access_token, google_refresh_token, microsoft_refresh_token, google_expires_at, microsoft_expires_at')
       .eq('user_id', user.id)
       .single();
+
+    console.log('Profile query result:', { 
+      hasProfile: !!profile, 
+      error: profileError?.message,
+      hasGoogleToken: !!profile?.google_access_token,
+      hasMicrosoftToken: !!profile?.microsoft_access_token,
+      googleExpiresAt: profile?.google_expires_at
+    });
 
     if (!profile) throw new Error('User profile not found');
     
@@ -87,6 +101,7 @@ serve(async (req) => {
 
     // Parse and validate request body
     const body = await req.json();
+    console.log('Request body:', JSON.stringify(body, null, 2));
     const action = body.action;
 
     if (!action) throw new Error('Missing action type');
@@ -114,27 +129,62 @@ serve(async (req) => {
 
 // GET EVENTS
 async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, body: any) {
+  console.log('=== Getting Calendar Events ===');
+  console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
+  console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
+
   let url = isMicrosoft
     ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime`
     : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime`;
 
-  if (body.timeMin) url += isMicrosoft
-    ? `&$filter=start/dateTime ge '${body.timeMin}'`
-    : `&timeMin=${encodeURIComponent(body.timeMin)}`;
+  // Build filter for time range
+  if (body.timeMin && body.timeMax) {
+    if (isMicrosoft) {
+      // Fix Microsoft Graph API filter syntax
+      url += `&$filter=start/dateTime ge '${body.timeMin}' and end/dateTime le '${body.timeMax}'`;
+    } else {
+      url += `&timeMin=${encodeURIComponent(body.timeMin)}&timeMax=${encodeURIComponent(body.timeMax)}`;
+    }
+  } else if (body.timeMin) {
+    url += isMicrosoft
+      ? `&$filter=start/dateTime ge '${body.timeMin}'`
+      : `&timeMin=${encodeURIComponent(body.timeMin)}`;
+  } else if (body.timeMax) {
+    url += isMicrosoft
+      ? `&$filter=end/dateTime le '${body.timeMax}'`
+      : `&timeMax=${encodeURIComponent(body.timeMax)}`;
+  }
 
-  if (body.timeMax) url += isMicrosoft
-    ? ` and end/dateTime le '${body.timeMax}'`
-    : `&timeMax=${encodeURIComponent(body.timeMax)}`;
+  console.log('Final URL:', url);
 
   const res = await fetch(url, {
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
   });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Failed to get events');
+  console.log('Calendar API response status:', res.status);
+
+  const responseText = await res.text();
+  console.log('Calendar API response text:', responseText);
+
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    console.error('Failed to parse calendar response:', e);
+    throw new Error('Invalid response from calendar API');
+  }
+
+  if (!res.ok) {
+    console.error('Calendar API error:', data);
+    throw new Error(data.error?.message || `Calendar API error: ${res.status}`);
+  }
+
+  const events = isMicrosoft ? data.value : data.items;
+  console.log('Parsed events count:', events?.length || 0);
+  console.log('Sample events:', events?.slice(0, 2));
 
   return new Response(JSON.stringify({
-    events: isMicrosoft ? data.value : data.items,
+    events: events || [],
     needsAuth: false,
     error: null
   }), { headers: corsHeaders });

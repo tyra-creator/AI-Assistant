@@ -50,10 +50,16 @@ const Index = () => {
 
     const getEvents = async () => {
       try {
+        console.log('=== Fetching Calendar Events (Client) ===');
         // Fetch upcoming events from now to 30 days in the future
         const now = new Date();
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + 30);
+        
+        console.log('Date range:', { 
+          timeMin: now.toISOString(), 
+          timeMax: futureDate.toISOString() 
+        });
         
         const response = await APIService.fetchCalendarEvents(
           undefined,
@@ -63,22 +69,31 @@ const Index = () => {
         console.log('Calendar response:', response);
         
         if (response.needsAuth) {
+          console.log('Calendar auth required:', response.error);
           setNotifications([]);
           setError(response.error || 'Please connect your calendar account to view events');
           return;
         }
         
+        console.log('Processing calendar events:', response.events?.length || 0);
         const calendarEvents = (response.events || []).map((event) => ({
           id: event.id,
           title: event.summary || event.subject,
           datetime: event.start?.dateTime || event.start?.date || event.start,
           description: event.description || event.body?.content || 'No description available',
         }));
+        console.log('Processed events:', calendarEvents);
         setNotifications(calendarEvents);
-        setError(null);
+        
+        if (calendarEvents.length === 0) {
+          console.log('No events found in the response');
+          setError('No upcoming events found in your calendar');
+        } else {
+          setError(null);
+        }
       } catch (err) {
         console.error('Calendar fetch error:', err);
-        setError(err.message || 'Failed to fetch calendar events');
+        setError(`Failed to fetch calendar events: ${err.message || 'Unknown error'}`);
         setNotifications([]);
       }
     };
@@ -258,6 +273,7 @@ const Index = () => {
   const refreshEvents = async () => {
     setIsProcessing(true);
     try {
+      console.log('=== Refreshing Calendar Events ===');
       // Fetch upcoming events from now to 30 days in the future
       const now = new Date();
       const futureDate = new Date();
@@ -268,6 +284,9 @@ const Index = () => {
         now.toISOString(),
         futureDate.toISOString()
       );
+      
+      console.log('Refresh response:', response);
+      
       if (response.needsAuth) {
         setError(response.error || 'Please connect your calendar account to view events');
         setNotifications([]);
@@ -285,10 +304,15 @@ const Index = () => {
         description: event.description || event.body?.content || 'No description available',
       }));
       setNotifications(calendarEvents);
-      setError(null);
+      
+      if (calendarEvents.length === 0) {
+        setError('No upcoming events found in your calendar');
+      } else {
+        setError(null);
+      }
     } catch (err) {
       console.error('Calendar refresh error:', err);
-      setError(err.message || 'Failed to refresh calendar events');
+      setError(`Failed to refresh calendar events: ${err.message || 'Unknown error'}`);
       setNotifications([]);
     } finally {
       setIsProcessing(false);
