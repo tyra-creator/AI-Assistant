@@ -28,12 +28,14 @@ const Header = () => {
     <header className="w-full py-6 px-8 border-b border-primary/20 bg-card/50 backdrop-blur-sm">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
         <div className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 bg-primary rounded-xl">
-            <MessageCircle className="h-6 w-6 text-primary-foreground" />
-          </div>
+          <img 
+            src="/lovable-uploads/059ad0dd-de4f-441d-9d82-e61c507b3136.png" 
+            alt="VirtuAI Logo" 
+            className="w-10 h-10 rounded-xl"
+          />
           <div>
             <h1 className="text-xl font-montserrat font-bold text-foreground">
-              Business Assistant
+              VirtuAI Assistant
             </h1>
             <p className="text-sm text-muted-foreground">AI-powered productivity companion</p>
           </div>
