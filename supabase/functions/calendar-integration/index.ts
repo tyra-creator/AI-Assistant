@@ -351,27 +351,64 @@ async function checkAvailability(apiBase: string, token: string, isMicrosoft: bo
 // Token refresh utility function
 async function refreshGoogleToken(supabase: any, userId: string, refreshToken: string): Promise<string> {
   try {
+    const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+    const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+    
+    console.log('OAuth credentials check:', { 
+      hasClientId: !!clientId, 
+      hasClientSecret: !!clientSecret,
+      clientIdLength: clientId?.length || 0
+    });
+    
+    if (!clientId || !clientSecret) {
+      console.error('Missing Google OAuth credentials - Client ID or Secret not configured');
+      throw new Error('OAuth credentials not configured. Please check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets.');
+    }
+
+    console.log('Attempting to refresh Google token...');
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
-        client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
-        client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+        client_id: clientId,
+        client_secret: clientSecret,
       }),
     });
 
+    const responseText = await response.text();
+    console.log('Token refresh response status:', response.status);
+    console.log('Token refresh response:', responseText);
+
     if (!response.ok) {
-      console.error('Failed to refresh Google token:', await response.text());
-      throw new Error('Token refresh failed');
+      console.error('Failed to refresh Google token:', responseText);
+      
+      // Parse error for better handling
+      let errorMessage = 'Token refresh failed';
+      try {
+        const errorData = JSON.parse(responseText);
+        if (errorData.error === 'invalid_grant') {
+          errorMessage = 'Refresh token expired. Please reconnect your Google account.';
+        } else if (errorData.error === 'invalid_client') {
+          errorMessage = 'OAuth client configuration error. Please check your Google OAuth setup.';
+        } else {
+          errorMessage = `Token refresh failed: ${errorData.error_description || errorData.error}`;
+        }
+      } catch (e) {
+        // Use default error message if JSON parsing fails
+      }
+      
+      throw new Error(errorMessage);
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     const newAccessToken = data.access_token;
     const expiresIn = data.expires_in || 3600; // Default to 1 hour
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
+    console.log('Token refreshed, updating database...');
+    
     // Update the database with new token
     await supabase
       .from('profiles')
@@ -385,6 +422,6 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
     return newAccessToken;
   } catch (error) {
     console.error('Error refreshing Google token:', error);
-    throw new Error('Authentication failed. Please reconnect your Google account.');
+    throw error; // Preserve the original error message
   }
 }
