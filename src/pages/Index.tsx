@@ -50,7 +50,16 @@ const Index = () => {
 
     const getEvents = async () => {
       try {
-        const response = await APIService.fetchCalendarEvents();
+        // Fetch upcoming events from now to 30 days in the future
+        const now = new Date();
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 30);
+        
+        const response = await APIService.fetchCalendarEvents(
+          undefined,
+          now.toISOString(),
+          futureDate.toISOString()
+        );
         console.log('Calendar response:', response);
         
         if (response.needsAuth) {
@@ -249,7 +258,16 @@ const Index = () => {
   const refreshEvents = async () => {
     setIsProcessing(true);
     try {
-      const response = await APIService.fetchCalendarEvents();
+      // Fetch upcoming events from now to 30 days in the future
+      const now = new Date();
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 30);
+      
+      const response = await APIService.fetchCalendarEvents(
+        undefined,
+        now.toISOString(),
+        futureDate.toISOString()
+      );
       if (response.needsAuth) {
         setError(response.error || 'Please connect your calendar account to view events');
         setNotifications([]);

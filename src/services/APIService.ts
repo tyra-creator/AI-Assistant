@@ -35,8 +35,8 @@ export class APIService {
         body: {
           action: 'get_events',
           date,
-          start_date: startDate,
-          end_date: endDate
+          timeMin: startDate,
+          timeMax: endDate
         }
       });
 
