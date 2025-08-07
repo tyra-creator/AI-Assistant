@@ -30,6 +30,13 @@ export const useAuth = () => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('=== Auth State Change ===');
+        console.log('Event:', event);
+        console.log('Session exists:', !!session);
+        console.log('User ID:', session?.user?.id);
+        console.log('Access token exists:', !!session?.access_token);
+        console.log('Refresh token exists:', !!session?.refresh_token);
+        
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -51,7 +58,13 @@ export const useAuth = () => {
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      console.log('=== Initial Session Check ===');
+      console.log('Session exists:', !!session);
+      console.log('Session error:', error);
+      console.log('User ID:', session?.user?.id);
+      console.log('Access token exists:', !!session?.access_token);
+      
       setSession(session);
       setUser(session?.user ?? null);
       
@@ -62,7 +75,9 @@ export const useAuth = () => {
           .select('*')
           .eq('user_id', session.user.id)
           .single()
-          .then(({ data: profileData }) => {
+          .then(({ data: profileData, error: profileError }) => {
+            console.log('Profile data:', profileData);
+            console.log('Profile error:', profileError);
             setProfile(profileData);
             setLoading(false);
           });
@@ -110,12 +125,20 @@ export const useAuth = () => {
     return 'U';
   };
 
+  const refreshSession = async () => {
+    console.log('=== Manual Session Refresh ===');
+    const { data, error } = await supabase.auth.refreshSession();
+    console.log('Refresh result:', { data: !!data.session, error });
+    return { data, error };
+  };
+
   return {
     user,
     session,
     profile,
     loading,
     signOut,
+    refreshSession,
     getDisplayName,
     getInitials,
     isAuthenticated: !!user,

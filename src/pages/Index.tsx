@@ -34,19 +34,29 @@ const Index = () => {
   const [error, setError] = useState(null);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { session, isAuthenticated, loading } = useAuth();
+  const { session, isAuthenticated, loading, refreshSession } = useAuth();
   
   // Initialize OAuth token extraction
   useOAuthTokens();
 
   useEffect(() => {
+    console.log('=== Index Component Auth Check ===');
+    console.log('Loading:', loading);
+    console.log('Is Authenticated:', isAuthenticated);
+    console.log('Session exists:', !!session);
+    console.log('Session access token:', !!session?.access_token);
+    
     // Check if user is authenticated
     if (!loading && !isAuthenticated) {
+      console.log('Redirecting to login - not authenticated');
       navigate('/login');
       return;
     }
 
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      console.log('Still loading or not authenticated, returning early');
+      return;
+    }
 
     const getEvents = async () => {
       try {

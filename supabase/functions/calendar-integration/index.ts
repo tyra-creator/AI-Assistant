@@ -51,11 +51,30 @@ serve(async (req) => {
       }
     );
 
-    // Authenticate user
+    // Authenticate user - enhanced debugging
     console.log('Authenticating user...');
+    console.log('Authorization header:', req.headers.get('Authorization') ? 'Present' : 'Missing');
+    
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    console.log('Auth result:', { hasUser: !!user, error: userError?.message });
-    if (userError || !user) throw new Error('Unauthorized');
+    console.log('Auth result:', { 
+      hasUser: !!user, 
+      userId: user?.id,
+      error: userError?.message,
+      errorCode: userError?.status
+    });
+    
+    if (userError || !user) {
+      console.error('Authentication failed:', userError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentication required',
+          needsAuth: true,
+          details: userError?.message || 'No user found',
+          authHeaderPresent: !!req.headers.get('Authorization')
+        }),
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     // Get user's calendar tokens with expiration info
     console.log('Fetching user profile and tokens...');
