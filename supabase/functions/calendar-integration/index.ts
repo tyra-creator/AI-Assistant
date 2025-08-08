@@ -156,22 +156,33 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
     ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime`
     : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime`;
 
+  // Apply safe defaults if no range provided
+  let timeMin: string | undefined = body.timeMin;
+  let timeMax: string | undefined = body.timeMax;
+  if (!timeMin && !timeMax) {
+    const now = new Date();
+    const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    timeMin = now.toISOString();
+    timeMax = future.toISOString();
+    console.log('Applied default time window (30 days):', { timeMin, timeMax });
+  }
+
   // Build filter for time range
-  if (body.timeMin && body.timeMax) {
+  if (timeMin && timeMax) {
     if (isMicrosoft) {
       // Fix Microsoft Graph API filter syntax
-      url += `&$filter=start/dateTime ge '${body.timeMin}' and end/dateTime le '${body.timeMax}'`;
+      url += `&$filter=start/dateTime ge '${timeMin}' and end/dateTime le '${timeMax}'`;
     } else {
-      url += `&timeMin=${encodeURIComponent(body.timeMin)}&timeMax=${encodeURIComponent(body.timeMax)}`;
+      url += `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
     }
-  } else if (body.timeMin) {
+  } else if (timeMin) {
     url += isMicrosoft
-      ? `&$filter=start/dateTime ge '${body.timeMin}'`
-      : `&timeMin=${encodeURIComponent(body.timeMin)}`;
-  } else if (body.timeMax) {
+      ? `&$filter=start/dateTime ge '${timeMin}'`
+      : `&timeMin=${encodeURIComponent(timeMin)}`;
+  } else if (timeMax) {
     url += isMicrosoft
-      ? `&$filter=end/dateTime le '${body.timeMax}'`
-      : `&timeMax=${encodeURIComponent(body.timeMax)}`;
+      ? `&$filter=end/dateTime le '${timeMax}'`
+      : `&timeMax=${encodeURIComponent(timeMax)}`;
   }
 
   console.log('Final URL:', url);

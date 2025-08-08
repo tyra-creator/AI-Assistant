@@ -31,19 +31,30 @@ export class APIService {
    */
   static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string) {
     try {
+      // Ensure we forward the user's JWT explicitly
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+
       console.log('Calling calendar-integration with payload:', {
         action: 'get_events',
         date,
         timeMin: startDate,
-        timeMax: endDate
+        timeMax: endDate,
+        hasAuth: !!accessToken,
       });
-      const { data, error } = await supabase.functions.invoke('calendar-integration', {
-        body: {
-          action: 'get_events',
-          date,
-          timeMin: startDate,
-          timeMax: endDate
-        }
+
+      const invoke = async (body: any) =>
+        supabase.functions.invoke('calendar-integration', {
+          body,
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        });
+
+      // Initial request using provided range
+      let { data, error } = await invoke({
+        action: 'get_events',
+        date,
+        timeMin: startDate,
+        timeMax: endDate,
       });
       console.log('Calendar function result:', { hasData: !!data, hasError: !!error, data, error });
 
@@ -52,30 +63,56 @@ export class APIService {
         return {
           events: [],
           needsAuth: true,
-          error: error.message || 'Calendar integration error'
+          error: (error as any).message || 'Calendar integration error',
         };
       }
 
-      // Handle different response structures
+      // Handle needsAuth responses
       if (data?.needsAuth) {
         return {
           events: [],
           needsAuth: true,
-          error: data.error || data.message || 'Authentication required'
+          error: data.error || data.message || 'Authentication required',
         };
       }
 
+      let events = data?.events || [];
+
+      // Retry strategy if no events returned: widen window to 60d, then try timeMin only
+      if (Array.isArray(events) && events.length === 0) {
+        const nowIso = new Date().toISOString();
+        const sixtyDaysIso = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+
+        console.log('No events returned, retrying with wider window (60 days)');
+        ({ data, error } = await invoke({ action: 'get_events', timeMin: nowIso, timeMax: sixtyDaysIso }));
+        console.log('Retry (60d) result:', { hasData: !!data, hasError: !!error, data, error });
+
+        if (!error && !data?.needsAuth) {
+          events = data?.events || [];
+        }
+
+        if (Array.isArray(events) && events.length === 0) {
+          console.log('Still no events, retrying with timeMin only');
+          ({ data, error } = await invoke({ action: 'get_events', timeMin: nowIso }));
+          console.log('Retry (timeMin only) result:', { hasData: !!data, hasError: !!error, data, error });
+
+          if (!error && !data?.needsAuth) {
+            events = data?.events || [];
+          }
+        }
+      }
+
       return {
-        events: data?.events || [],
+        events,
         needsAuth: false,
-        error: null
+        error: null,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching calendar events:', error);
       return {
         events: [],
         needsAuth: true,
-        error: error.message || 'Failed to fetch calendar events'
+        error: error?.message || 'Failed to fetch calendar events',
       };
     }
   }
