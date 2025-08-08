@@ -18,6 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { UserProfileDropdown } from '@/components/UserProfileDropdown';
 import { useOAuthTokens } from '@/hooks/useOAuthTokens';
 import { useAuth } from '@/hooks/useAuth';
+import { OAuthConnectionCard } from '@/components/OAuthConnectionCard';
 
 const Index = () => {
   const [isListening, setIsListening] = useState(false);
@@ -34,7 +35,7 @@ const Index = () => {
   const [error, setError] = useState(null);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { session, isAuthenticated, loading, refreshSession } = useAuth();
+  const { session, isAuthenticated, loading, refreshSession, profile } = useAuth();
   
   // Initialize OAuth token extraction
   useOAuthTokens();
@@ -375,6 +376,27 @@ const Index = () => {
                 {notifications.map((notification) => (
                   <NotificationCard key={notification.id} notification={notification} />
                 ))}
+              </div>
+            ) : error ? (
+              <div className="space-y-4">
+                <div className="text-center py-4 px-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+                  <Calendar className="h-6 w-6 mx-auto mb-2 text-amber-500" />
+                  <p className="text-sm text-amber-800 dark:text-amber-200">{error}</p>
+                </div>
+                <div className="space-y-3">
+                  <OAuthConnectionCard
+                    provider="google"
+                    isConnected={!!profile?.google_access_token}
+                    userInfo={profile?.google_user_info}
+                    onConnectionChange={() => {}}
+                  />
+                  <OAuthConnectionCard
+                    provider="microsoft"
+                    isConnected={!!profile?.microsoft_access_token}
+                    userInfo={profile?.microsoft_user_info}
+                    onConnectionChange={() => {}}
+                  />
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">

@@ -31,6 +31,12 @@ export class APIService {
    */
   static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string) {
     try {
+      console.log('Calling calendar-integration with payload:', {
+        action: 'get_events',
+        date,
+        timeMin: startDate,
+        timeMax: endDate
+      });
       const { data, error } = await supabase.functions.invoke('calendar-integration', {
         body: {
           action: 'get_events',
@@ -39,6 +45,7 @@ export class APIService {
           timeMax: endDate
         }
       });
+      console.log('Calendar function result:', { hasData: !!data, hasError: !!error, data, error });
 
       if (error) {
         console.error('Error from calendar function:', error);
