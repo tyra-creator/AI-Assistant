@@ -89,11 +89,12 @@ const Index = () => {
         console.log('Processing calendar events:', response.events?.length || 0);
         const calendarEvents = (response.events || []).map((event) => ({
           id: event.id,
-          title: event.summary || event.subject,
+          title: event.summary ?? event.subject ?? "(Untitled event)",
           datetime: event.start?.dateTime || event.start?.date || event.start,
-          description: event.description || event.body?.content || 'No description available',
+          description: event.description || event.body?.content || "No description available",
         }));
         console.log('Processed events:', calendarEvents);
+        console.log('Preview titles:', calendarEvents.slice(0, 2).map(e => e.title));
         setNotifications(calendarEvents);
         
         if (calendarEvents.length === 0) {
@@ -310,10 +311,11 @@ const Index = () => {
       }
       const calendarEvents = (response.events || []).map((event) => ({
         id: event.id,
-        title: event.summary || event.subject,
+        title: event.summary ?? event.subject ?? "(Untitled event)",
         datetime: event.start?.dateTime || event.start?.date || event.start,
-        description: event.description || event.body?.content || 'No description available',
+        description: event.description || event.body?.content || "No description available",
       }));
+      console.log('Preview titles:', calendarEvents.slice(0, 2).map(e => e.title));
       setNotifications(calendarEvents);
       
       if (calendarEvents.length === 0) {
