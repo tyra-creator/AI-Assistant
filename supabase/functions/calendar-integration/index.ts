@@ -153,36 +153,29 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
 
   let url = isMicrosoft
-    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime`
-    : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime`;
+    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`
+    : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100`;
 
-  // Apply safe defaults if no range provided
-  let timeMin: string | undefined = body.timeMin;
-  let timeMax: string | undefined = body.timeMax;
-  if (!timeMin && !timeMax) {
-    const now = new Date();
-    const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    timeMin = now.toISOString();
-    timeMax = future.toISOString();
-    console.log('Applied default time window (30 days):', { timeMin, timeMax });
-  }
+  // Normalize and bound time range
+  const now = new Date();
+  const parsedMin = body.timeMin ? new Date(body.timeMin) : now;
+  const parsedMax = body.timeMax ? new Date(body.timeMax) : new Date(parsedMin.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  // Build filter for time range
-  if (timeMin && timeMax) {
-    if (isMicrosoft) {
-      // Fix Microsoft Graph API filter syntax
-      url += `&$filter=start/dateTime ge '${timeMin}' and end/dateTime le '${timeMax}'`;
-    } else {
-      url += `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
-    }
-  } else if (timeMin) {
-    url += isMicrosoft
-      ? `&$filter=start/dateTime ge '${timeMin}'`
-      : `&timeMin=${encodeURIComponent(timeMin)}`;
-  } else if (timeMax) {
-    url += isMicrosoft
-      ? `&$filter=end/dateTime le '${timeMax}'`
-      : `&timeMax=${encodeURIComponent(timeMax)}`;
+  // Cap range to 60 days max to prevent huge result sets
+  const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
+  const boundedMax = (parsedMax.getTime() - parsedMin.getTime() > sixtyDaysMs)
+    ? new Date(parsedMin.getTime() + sixtyDaysMs)
+    : parsedMax;
+
+  const timeMin = parsedMin.toISOString();
+  const timeMax = boundedMax.toISOString();
+  console.log('Normalized time window:', { timeMin, timeMax });
+
+  // Always apply both bounds
+  if (isMicrosoft) {
+    url += `&$filter=start/dateTime ge '${timeMin}' and end/dateTime le '${timeMax}'`;
+  } else {
+    url += `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
   }
 
   console.log('Final URL:', url);

@@ -35,11 +35,16 @@ export class APIService {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
 
+      const nowIso = new Date().toISOString();
+      const defaultEndIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      let effectiveTimeMin = startDate || nowIso;
+      let effectiveTimeMax = endDate || defaultEndIso;
+
       console.log('Calling calendar-integration with payload:', {
         action: 'get_events',
         date,
-        timeMin: startDate,
-        timeMax: endDate,
+        timeMin: effectiveTimeMin,
+        timeMax: effectiveTimeMax,
         hasAuth: !!accessToken,
       });
 
@@ -53,8 +58,8 @@ export class APIService {
       let { data, error } = await invoke({
         action: 'get_events',
         date,
-        timeMin: startDate,
-        timeMax: endDate,
+        timeMin: effectiveTimeMin,
+        timeMax: effectiveTimeMax,
       });
       console.log('Calendar function result:', { hasData: !!data, hasError: !!error, data, error });
 
@@ -78,28 +83,34 @@ export class APIService {
 
       let events = data?.events || [];
 
-      // Retry strategy if no events returned: widen window to 60d, then try timeMin only
+      // Retry strategy if no events returned: widen window to 60d (bounded)
       if (Array.isArray(events) && events.length === 0) {
-        const nowIso = new Date().toISOString();
-        const sixtyDaysIso = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+        const sixtyDaysEndIso = new Date(new Date(effectiveTimeMin).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
 
-        console.log('No events returned, retrying with wider window (60 days)');
-        ({ data, error } = await invoke({ action: 'get_events', timeMin: nowIso, timeMax: sixtyDaysIso }));
+        console.log('No events returned, retrying with wider window (60 days, bounded)');
+        ({ data, error } = await invoke({ action: 'get_events', timeMin: effectiveTimeMin, timeMax: sixtyDaysEndIso }));
         console.log('Retry (60d) result:', { hasData: !!data, hasError: !!error, data, error });
 
         if (!error && !data?.needsAuth) {
           events = data?.events || [];
+          effectiveTimeMax = sixtyDaysEndIso;
         }
+      }
 
-        if (Array.isArray(events) && events.length === 0) {
-          console.log('Still no events, retrying with timeMin only');
-          ({ data, error } = await invoke({ action: 'get_events', timeMin: nowIso }));
-          console.log('Retry (timeMin only) result:', { hasData: !!data, hasError: !!error, data, error });
-
-          if (!error && !data?.needsAuth) {
-            events = data?.events || [];
-          }
-        }
+      // Final safety filter to ensure events are within the requested window
+      try {
+        const minIso = new Date(effectiveTimeMin).toISOString();
+        const maxIso = new Date(effectiveTimeMax).toISOString();
+        const beforeCount = Array.isArray(events) ? events.length : 0;
+        events = (events || []).filter((e: any) => {
+          const start = e?.start?.dateTime || e?.start?.date || e?.start;
+          if (!start) return true;
+          const startIso = new Date(start).toISOString();
+          return startIso >= minIso && startIso <= maxIso;
+        });
+        console.log('Filtered events within range:', { beforeCount, afterCount: events.length, minIso, maxIso });
+      } catch (e) {
+        console.warn('Event range filter skipped due to parse error:', e);
       }
 
       return {
