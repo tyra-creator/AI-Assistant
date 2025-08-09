@@ -113,10 +113,16 @@ async function processMessage(message: string, state: any, sessionId: string | n
     return await handleMeetingFlow(message, { ...currentState, loopCount: loopCount + 1 });
   }
 
+  // Check if this is an email request (e.g., "show my unread emails")
+  if (isEmailRequest(message)) {
+    console.log('Handling email intent...');
+    return await handleEmailRequest(authHeader);
+  }
+
   // Default response
   const response = await generateResponse(message, apiKey);
   return {
-    response: response || "I'm here to help you schedule meetings or manage your calendar.",
+    response: response || "I'm here to help you schedule meetings or manage your calendar and email.",
     state: {}
   };
 }
@@ -333,6 +339,59 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
       response: `❌ Sorry, I couldn't create the calendar event due to an error: ${error.message}\n\nPlease try again or check your calendar connection.`,
       state: {}
     };
+  }
+}
+
+function isEmailRequest(message: string): boolean {
+  const emailKeywords = ['unread email', 'unread emails', 'inbox', 'show emails', 'check email', 'new emails', 'my emails'];
+  const lower = message.toLowerCase();
+  return emailKeywords.some(k => lower.includes(k));
+}
+
+async function handleEmailRequest(authHeader?: string | null) {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    } else {
+      headers['Authorization'] = `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`;
+      console.log('Warning: No user auth header available for email intent, using service role');
+    }
+
+    const resp = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/email-integration', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'get_emails', folder: 'inbox' })
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('Email integration failed:', resp.status, errText);
+      if (resp.status === 401 || errText.includes('Unauthorized')) {
+        return {
+          response: '❌ Please log in and connect your Google or Microsoft account to read your inbox.',
+          state: {}
+        };
+      }
+      return { response: `❌ Sorry, I couldn't fetch your unread emails. ${errText}`, state: {} };
+    }
+
+    const data = await resp.json();
+    const emails = (data.emails || []) as Array<any>;
+    if (!emails.length) {
+      return { response: '📭 You have no unread emails.', state: {} };
+    }
+
+    const top = emails.slice(0, 5);
+    const summary = top.map((e, i) => `${i + 1}. [${e.provider}] From: ${e.from || 'Unknown'} | Subject: ${e.subject || '(no subject)'} | Received: ${new Date(e.received_at).toLocaleString()}`).join('\n');
+
+    return {
+      response: `📬 I found ${emails.length} unread email(s). Here are the latest ${top.length}—\n${summary}`,
+      state: {}
+    };
+  } catch (error: any) {
+    console.error('Error handling email request:', error);
+    return { response: `❌ Error fetching unread emails: ${error.message}`, state: {} };
   }
 }
 
