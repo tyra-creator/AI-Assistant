@@ -100,8 +100,68 @@ async function processMessage(message: string, state: any, sessionId: string | n
     };
   }
 
-  // Improved confirmation detection - exact word matching
+  // Improved confirmation detection - exact word matching (meeting flow)
   const isConfirmation = /\b(confirm|yes|ok|correct)\b/i.test(message.trim());
+
+  // Email draft flow handling
+  if (currentState.emailDraftFlow) {
+    const draftState = currentState.emailDraftFlow;
+    const lower = message.trim().toLowerCase();
+
+    // Awaiting initial confirmation to start drafting
+    if (draftState.awaitingConfirmation) {
+      if (isDraftConfirmation(message)) {
+        const emails: any[] = draftState.emails || [];
+        const batchCount = Math.min(2, Math.max(0, emails.length));
+        if (batchCount === 0) {
+          return { response: 'I could not find any emails to draft replies for.', state: {} };
+        }
+        const draftsText = await generateDraftsForEmails(emails, 0, batchCount, apiKey);
+        return {
+          response: `✍️ Here are draft replies for the first ${batchCount} email(s):\n\n${draftsText}\n\nReply "next" to draft the next two, or "cancel" to stop.`,
+          state: {
+            ...currentState,
+            emailDraftFlow: { ...draftState, nextIndex: batchCount, awaitingConfirmation: false, autoDrafting: true }
+          }
+        };
+      }
+      if (isDraftCancel(message)) {
+        return { response: 'Okay, I will not draft replies now. Ask me anytime if you want me to draft responses.', state: {} };
+      }
+      return {
+        response: 'Would you like me to draft replies to these emails? Reply "yes" to begin or "no" to cancel.',
+        state: { ...currentState }
+      };
+    }
+
+    // Auto-drafting flow (after confirmation)
+    if (draftState.autoDrafting) {
+      if (isDraftCancel(message)) {
+        return { response: 'Drafting cancelled. No drafts were sent or saved.', state: {} };
+      }
+      if (isDraftNext(message)) {
+        const emails: any[] = draftState.emails || [];
+        const start = draftState.nextIndex || 0;
+        if (start >= emails.length) {
+          return { response: '✅ All drafts have already been prepared for your unread emails.', state: {} };
+        }
+        const batchCount = Math.min(2, emails.length - start);
+        const draftsText = await generateDraftsForEmails(emails, start, batchCount, apiKey);
+        const newNext = start + batchCount;
+        const done = newNext >= emails.length;
+        return {
+          response: `${draftsText}\n\n${done ? '✅ All drafts prepared.' : 'Reply "next" to draft the next two, or "cancel" to stop.'}`,
+          state: done ? {} : { ...currentState, emailDraftFlow: { ...draftState, nextIndex: newNext, autoDrafting: true } }
+        };
+      }
+      // Any other input during auto-drafting
+      return {
+        response: 'Type "next" to draft the next two replies, or "cancel" to stop.',
+        state: { ...currentState }
+      };
+    }
+  }
+
   if (isConfirmation && currentState.readyToConfirm) {
     console.log('Processing confirmation...');
     return await handleConfirmation(currentState, authHeader);
@@ -385,13 +445,97 @@ async function handleEmailRequest(authHeader?: string | null) {
     const top = emails.slice(0, 5);
     const summary = top.map((e, i) => `${i + 1}. [${e.provider}] From: ${e.from || 'Unknown'} | Subject: ${e.subject || '(no subject)'} | Received: ${new Date(e.received_at).toLocaleString()}`).join('\n');
 
+    // Keep only minimal fields for drafting context
+    const simplified = emails.map((e: any) => ({
+      id: e.id,
+      provider: e.provider,
+      from: e.from || 'Unknown',
+      subject: e.subject || '(no subject)',
+      body_preview: e.body_preview || '',
+      received_at: e.received_at
+    }));
+
     return {
-      response: `📬 I found ${emails.length} unread email(s). Here are the latest ${top.length}—\n${summary}`,
-      state: {}
+      response: `📬 I found ${emails.length} unread email(s). Here are the latest ${top.length}—\n${summary}\n\nWould you like me to draft replies to these emails? Reply "yes" to begin or "no" to cancel.`,
+      state: {
+        emailDraftFlow: {
+          emails: simplified,
+          nextIndex: 0,
+          awaitingConfirmation: true,
+          autoDrafting: false
+        }
+      }
     };
   } catch (error: any) {
     console.error('Error handling email request:', error);
     return { response: `❌ Error fetching unread emails: ${error.message}`, state: {} };
+  }
+}
+
+// Drafting helpers
+function isDraftConfirmation(msg: string): boolean {
+  return /\b(yes|confirm|ok|okay|sure|please do|go ahead)\b/i.test(msg.trim());
+}
+function isDraftCancel(msg: string): boolean {
+  return /\b(no|cancel|stop|never mind|no thanks|not now)\b/i.test(msg.trim());
+}
+function isDraftNext(msg: string): boolean {
+  return /\b(next|continue|more|proceed)\b/i.test(msg.trim());
+}
+
+interface EmailMeta {
+  id: string;
+  provider: string;
+  from: string;
+  subject: string;
+  body_preview: string;
+  received_at: string;
+}
+
+async function generateDraftsForEmails(allEmails: EmailMeta[], startIndex: number, batchSize: number, apiKey: string): Promise<string> {
+  const batch = allEmails.slice(startIndex, startIndex + batchSize);
+  if (!batch.length) return 'No emails to draft.';
+
+  const context = batch.map((e, idx) => (
+    `Email ${idx + 1}:
+From: ${e.from}
+Subject: ${e.subject}
+BodyPreview: ${e.body_preview?.slice(0, 400) || '(no preview)'}
+ReceivedAt: ${new Date(e.received_at).toLocaleString()}`
+  )).join('\n\n');
+
+  const body = {
+    model: 'deepseek/deepseek-chat',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are an expert executive assistant that drafts clear, concise, professional email replies. For EACH email context, produce a numbered draft with: 1) a suggested Subject line prefixed with "Subject:", and 2) a short polite reply body. Keep it neutral, actionable, and under 120 words per draft. Do not include extra commentary.'
+      },
+      {
+        role: 'user',
+        content: `Draft professional replies for these emails. Output strictly as:\n1) Subject: ...\nDraft reply: ...\n\n2) Subject: ...\nDraft reply: ...\n\nEmails:\n\n${context}`
+      }
+    ],
+    max_tokens: 700,
+    temperature: 0.3
+  };
+
+  try {
+    const resp = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body)
+    }, 20000);
+
+    const data = await resp.json();
+    const text = data.choices?.[0]?.message?.content?.trim();
+    return text || 'Drafts generated.';
+  } catch (e) {
+    console.error('Error generating drafts:', e);
+    return '⚠️ I had trouble generating drafts just now. Please try again.';
   }
 }
 
