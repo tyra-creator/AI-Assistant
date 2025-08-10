@@ -1,3 +1,4 @@
+import { supabase } from '@/integrations/supabase/client';
 // TypeScript definitions for the Web Speech API
 declare global {
   interface Window {
@@ -51,6 +52,9 @@ export class ModernTTSService {
   private static isMuted = false;
   private static onResultCallback: ((text: string) => void) | null = null;
   private static onEndCallback: (() => void) | null = null;
+  
+  // Single audio element for edge TTS playback
+  private static audioEl: HTMLAudioElement | null = null;
   
   // Enhanced browser TTS
   private static selectedVoice: SpeechSynthesisVoice | null = null;
@@ -192,8 +196,56 @@ export class ModernTTSService {
       return;
     }
 
-    // Use enhanced browser TTS
+    // Prefer Edge TTS for consistent, high-quality voice
+    try {
+      await this.speakWithEdgeTTS(text, onEnd);
+      return;
+    } catch (err) {
+      console.warn('Edge TTS failed, falling back to browser TTS:', err);
+    }
+
+    // Fallback to enhanced browser TTS
     this.speakWithBrowserTTS(text, onEnd);
+  }
+
+  private static async speakWithEdgeTTS(text: string, onEnd?: () => void) {
+    // Stop any ongoing speech first
+    try { this.stopSpeaking(); } catch {}
+
+    // Invoke Supabase Edge Function for consistent voice (OpenAI 'nova')
+    const { data, error } = await supabase.functions.invoke('text-to-speech', {
+      body: { text, voice: 'nova' },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const base64Audio: string | undefined = (data as any)?.audioContent || (data as any)?.audio;
+    const contentType: string = (data as any)?.contentType || 'audio/mpeg';
+
+    if (!base64Audio) {
+      throw new Error('No audio content returned from TTS function');
+    }
+
+    if (!this.audioEl) {
+      this.audioEl = new Audio();
+    }
+
+    const audio = this.audioEl;
+
+    audio.onended = () => {
+      if (onEnd) onEnd();
+    };
+
+    audio.onerror = (e) => {
+      console.error('Audio playback error:', e);
+      if (onEnd) onEnd();
+    };
+
+    audio.src = `data:${contentType};base64,${base64Audio}`;
+    audio.load();
+    await audio.play();
   }
 
   private static speakWithBrowserTTS(text: string, onEnd?: () => void) {
@@ -231,6 +283,18 @@ export class ModernTTSService {
    * Stop any ongoing speech
    */
   static stopSpeaking(): void {
+    // Stop edge TTS audio if playing
+    if (this.audioEl) {
+      try {
+        this.audioEl.pause();
+        this.audioEl.currentTime = 0;
+        this.audioEl.src = '';
+      } catch (e) {
+        console.warn('Error stopping audio element:', e);
+      }
+    }
+
+    // Also cancel any browser TTS
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
