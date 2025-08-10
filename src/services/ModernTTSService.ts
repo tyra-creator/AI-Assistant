@@ -212,9 +212,9 @@ export class ModernTTSService {
     // Stop any ongoing speech first
     try { this.stopSpeaking(); } catch {}
 
-    // Invoke Supabase Edge Function for consistent voice (OpenAI 'nova')
+    // Invoke Supabase Edge Function for Edge TTS (en-US-AriaNeural)
     const { data, error } = await supabase.functions.invoke('text-to-speech', {
-      body: { text, voice: 'nova' },
+      body: { text, voice: 'en-US-AriaNeural' },
     });
 
     if (error) {

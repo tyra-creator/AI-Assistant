@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.oauth-callback]
 verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false
