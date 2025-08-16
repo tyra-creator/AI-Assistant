@@ -196,15 +196,8 @@ export class ModernTTSService {
       return;
     }
 
-    // Prefer Edge TTS for consistent, high-quality voice
-    try {
-      await this.speakWithEdgeTTS(text, onEnd);
-      return;
-    } catch (err) {
-      console.warn('Edge TTS failed, falling back to browser TTS:', err);
-    }
-
-    // Fallback to enhanced browser TTS
+    // Force browser TTS since Edge TTS is currently down
+    console.log('TTS speak called for text:', text.substring(0, 50) + '...');
     this.speakWithBrowserTTS(text, onEnd);
   }
 
@@ -212,12 +205,15 @@ export class ModernTTSService {
     // Stop any ongoing speech first
     try { this.stopSpeaking(); } catch {}
 
+    console.log('Attempting Edge TTS...');
+    
     // Invoke Supabase Edge Function for Edge TTS (en-US-AriaNeural)
     const { data, error } = await supabase.functions.invoke('text-to-speech', {
       body: { text, voice: 'en-US-AriaNeural' },
     });
 
     if (error) {
+      console.warn('Edge TTS failed:', error);
       throw error;
     }
 
@@ -249,6 +245,8 @@ export class ModernTTSService {
   }
 
   private static speakWithBrowserTTS(text: string, onEnd?: () => void) {
+    console.log('Using browser TTS fallback...');
+    
     // Cancel any ongoing speech first
     window.speechSynthesis.cancel();
     
