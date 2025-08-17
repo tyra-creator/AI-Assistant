@@ -30,22 +30,43 @@ export class APIService {
    * Fetch calendar events via Supabase edge function
    */
   static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string) {
+    console.log('=== APIService.fetchCalendarEvents CALLED ===');
+    console.log('Parameters:', { date, startDate, endDate });
+    
     try {
+      console.log('=== Step 1: Getting session data ===');
       // Ensure we forward the user's JWT explicitly
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+      
       const accessToken = sessionData?.session?.access_token;
+      console.log('Session retrieved:', {
+        hasSession: !!sessionData?.session,
+        hasAccessToken: !!accessToken,
+        userId: sessionData?.session?.user?.id,
+        sessionError: sessionError
+      });
 
+      if (!sessionData?.session || !accessToken) {
+        console.error('No valid session or access token found');
+        return {
+          events: [],
+          needsAuth: true,
+          error: 'No valid authentication session found',
+        };
+      }
+
+      console.log('=== Step 2: Preparing date range ===');
       const nowIso = new Date().toISOString();
       const defaultEndIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       let effectiveTimeMin = startDate || nowIso;
       let effectiveTimeMax = endDate || defaultEndIso;
 
       console.log('=== Calendar Integration Client Call ===');
-      console.log('Session data:', {
-        hasSession: !!sessionData?.session,
-        hasAccessToken: !!accessToken,
-        userId: sessionData?.session?.user?.id
-      });
       console.log('Calling calendar-integration with payload:', {
         action: 'get_events',
         date,
@@ -53,22 +74,62 @@ export class APIService {
         timeMax: effectiveTimeMax,
       });
 
-      const invoke = async (body: any) => {
-        const result = await supabase.functions.invoke('calendar-integration', {
-          body,
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-        });
+      const invoke = async (body: any, retryCount = 0) => {
+        console.log(`=== Step 3: Invoking calendar-integration (attempt ${retryCount + 1}) ===`);
         
-        console.log('Raw edge function response:', {
-          hasData: !!result.data,
-          hasError: !!result.error,
-          data: result.data,
-          error: result.error
-        });
-        
-        return result;
+        try {
+          // Add timeout wrapper
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000);
+          });
+          
+          const requestPromise = supabase.functions.invoke('calendar-integration', {
+            body,
+            headers: { 
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+          });
+          
+          const result = await Promise.race([requestPromise, timeoutPromise]) as any;
+          
+          console.log('Raw edge function response:', {
+            hasData: !!result.data,
+            hasError: !!result.error,
+            data: result.data,
+            error: result.error,
+            attempt: retryCount + 1
+          });
+          
+          // If we get a network error or timeout, retry up to 2 times
+          if (result.error && retryCount < 2) {
+            console.log(`Retrying request (attempt ${retryCount + 2}) due to error:`, result.error);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+            return invoke(body, retryCount + 1);
+          }
+          
+          return result;
+          
+        } catch (invokeError: any) {
+          console.error('Calendar function invocation error:', invokeError);
+          
+          if (retryCount < 2) {
+            console.log(`Retrying due to exception (attempt ${retryCount + 2}):`, invokeError.message);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+            return invoke(body, retryCount + 1);
+          }
+          
+          return {
+            data: null,
+            error: {
+              message: invokeError.message || 'Failed to invoke calendar function',
+              code: invokeError.code || 'INVOKE_ERROR'
+            }
+          };
+        }
       };
 
+      console.log('=== Step 4: Making initial request ===');
       // Initial request using provided range
       let { data, error } = await invoke({
         action: 'get_events',
@@ -77,6 +138,7 @@ export class APIService {
         timeMax: effectiveTimeMax,
       });
 
+      console.log('=== Step 5: Processing initial response ===');
       if (error) {
         console.error('Error from calendar function:', error);
         return {
@@ -88,6 +150,7 @@ export class APIService {
 
       // Handle needsAuth responses
       if (data?.needsAuth) {
+        console.log('Authentication required response from calendar function');
         return {
           events: [],
           needsAuth: true,
@@ -96,9 +159,11 @@ export class APIService {
       }
 
       let events = data?.events || [];
+      console.log('Initial events received:', events.length);
 
       // Retry strategy if no events returned: widen window to 60d (bounded)
       if (Array.isArray(events) && events.length === 0) {
+        console.log('=== Step 6: No events found, retrying with wider window ===');
         const sixtyDaysEndIso = new Date(new Date(effectiveTimeMin).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
 
         console.log('No events returned, retrying with wider window (60 days, bounded)');
@@ -108,9 +173,11 @@ export class APIService {
         if (!error && !data?.needsAuth) {
           events = data?.events || [];
           effectiveTimeMax = sixtyDaysEndIso;
+          console.log('Retry events received:', events.length);
         }
       }
 
+      console.log('=== Step 7: Filtering events within date range ===');
       // Final safety filter to ensure events are within the requested window
       try {
         const minIso = new Date(effectiveTimeMin).toISOString();
@@ -127,13 +194,22 @@ export class APIService {
         console.warn('Event range filter skipped due to parse error:', e);
       }
 
+      console.log('=== Step 8: Returning successful response ===');
+      console.log('Final events count:', events.length);
       return {
         events,
         needsAuth: false,
         error: null,
       };
     } catch (error: any) {
-      console.error('Error fetching calendar events:', error);
+      console.error('=== CRITICAL ERROR in fetchCalendarEvents ===');
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        name: error.name
+      });
+      
       return {
         events: [],
         needsAuth: true,
