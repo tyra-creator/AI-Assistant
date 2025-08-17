@@ -102,11 +102,30 @@ serve(async (req) => {
     if (!isMicrosoft && profile.google_expires_at) {
       const expiryTime = new Date(profile.google_expires_at);
       const now = new Date();
-      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+      const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000); // Check 1 hour ahead
       
-      if (expiryTime <= fiveMinutesFromNow && profile.google_refresh_token) {
-        console.log('Google token expiring soon, refreshing...');
-        accessToken = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token);
+      console.log('Token expiry check:', {
+        expiryTime: expiryTime.toISOString(),
+        now: now.toISOString(),
+        oneHourFromNow: oneHourFromNow.toISOString(),
+        isExpired: expiryTime <= now,
+        willExpireSoon: expiryTime <= oneHourFromNow,
+        hasRefreshToken: !!profile.google_refresh_token
+      });
+      
+      if (expiryTime <= oneHourFromNow && profile.google_refresh_token) {
+        console.log('Google token expired or expiring soon, refreshing...');
+        try {
+          accessToken = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token);
+          console.log('Token refresh successful, new token acquired');
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          return new Response(JSON.stringify({
+            error: 'Authentication expired. Please reconnect your Google account.',
+            needsAuth: true,
+            details: refreshError.message
+          }), { status: 401, headers: corsHeaders });
+        }
       }
     }
 
