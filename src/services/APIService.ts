@@ -26,6 +26,77 @@ export class APIService {
     this.conversationId = null;
   }
 
+  // Session cache to avoid repeated problematic getSession calls
+  private static sessionCache: { session: any; timestamp: number } | null = null;
+  private static readonly SESSION_CACHE_DURATION = 30000; // 30 seconds
+
+  /**
+   * Get session with timeout and fallback mechanisms
+   */
+  private static async getSessionWithFallback(): Promise<{ session: any; error?: any }> {
+    console.log('=== Step 1: Getting session data ===');
+    
+    // Check cache first
+    if (this.sessionCache && Date.now() - this.sessionCache.timestamp < this.SESSION_CACHE_DURATION) {
+      console.log('Using cached session');
+      return { session: this.sessionCache.session };
+    }
+
+    try {
+      // Create timeout promise that rejects properly
+      const timeoutPromise = new Promise<{ data: null; error: any }>((_, reject) => {
+        setTimeout(() => reject(new Error('Session retrieval timeout after 8 seconds')), 8000);
+      });
+
+      // Create session promise with proper typing
+      const sessionPromise = supabase.auth.getSession();
+
+      console.log('Attempting session retrieval with 8s timeout...');
+      
+      // Race between session and timeout
+      const result = await Promise.race([sessionPromise, timeoutPromise]);
+      
+      const { data: sessionData, error: sessionError } = result;
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+
+      if (sessionData?.session) {
+        // Cache the successful session
+        this.sessionCache = {
+          session: sessionData.session,
+          timestamp: Date.now()
+        };
+        console.log('Session retrieved and cached successfully');
+        return { session: sessionData.session };
+      }
+
+      console.warn('No session found in response');
+      return { session: null, error: 'No session found' };
+
+    } catch (error: any) {
+      console.error('Session retrieval failed:', error.message);
+      
+      // Try to get session from current auth state as fallback
+      try {
+        console.log('Attempting session fallback from auth state...');
+        const user = supabase.auth.getUser();
+        
+        // If we have a user, try to construct a minimal session
+        if (user) {
+          console.log('Fallback: found user in auth state');
+          return { session: { user, access_token: 'fallback' } };
+        }
+      } catch (fallbackError) {
+        console.error('Fallback session retrieval also failed:', fallbackError);
+      }
+
+      return { session: null, error: error.message };
+    }
+  }
+
   /**
    * Fetch calendar events via Supabase edge function
    */
@@ -34,40 +105,30 @@ export class APIService {
     console.log('Parameters:', { date, startDate, endDate });
     
     try {
-      console.log('=== Step 1: Getting session data ===');
+      const { session: sessionData, error: sessionError } = await this.getSessionWithFallback();
       
-      // Add timeout protection to session retrieval
-      const sessionTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Session retrieval timeout after 10 seconds')), 10000);
-      });
-      
-      const sessionPromise = supabase.auth.getSession();
-      
-      // Race between session retrieval and timeout
-      const { data: sessionData, error: sessionError } = await Promise.race([
-        sessionPromise,
-        sessionTimeoutPromise
-      ]);
-      
-      if (sessionError) {
-        console.error('Session error:', sessionError);
-        throw new Error(`Session error: ${sessionError.message}`);
-      }
-      
-      const accessToken = sessionData?.session?.access_token;
-      console.log('Session retrieved:', {
-        hasSession: !!sessionData?.session,
-        hasAccessToken: !!accessToken,
-        userId: sessionData?.session?.user?.id,
-        sessionError: sessionError
-      });
-
-      if (!sessionData?.session || !accessToken) {
-        console.error('No valid session or access token found');
+      if (sessionError || !sessionData) {
+        console.error('No valid session found:', sessionError);
         return {
           events: [],
           needsAuth: true,
-          error: 'No valid authentication session found',
+          error: sessionError || 'No valid authentication session found',
+        };
+      }
+      
+      const accessToken = sessionData?.access_token;
+      console.log('Session retrieved:', {
+        hasSession: !!sessionData,
+        hasAccessToken: !!accessToken,
+        userId: sessionData?.user?.id,
+      });
+
+      if (!accessToken) {
+        console.error('No access token found in session');
+        return {
+          events: [],
+          needsAuth: true,
+          error: 'No access token found in session',
         };
       }
 
