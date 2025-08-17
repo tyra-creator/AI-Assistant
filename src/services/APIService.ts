@@ -40,19 +40,34 @@ export class APIService {
       let effectiveTimeMin = startDate || nowIso;
       let effectiveTimeMax = endDate || defaultEndIso;
 
+      console.log('=== Calendar Integration Client Call ===');
+      console.log('Session data:', {
+        hasSession: !!sessionData?.session,
+        hasAccessToken: !!accessToken,
+        userId: sessionData?.session?.user?.id
+      });
       console.log('Calling calendar-integration with payload:', {
         action: 'get_events',
         date,
         timeMin: effectiveTimeMin,
         timeMax: effectiveTimeMax,
-        hasAuth: !!accessToken,
       });
 
-      const invoke = async (body: any) =>
-        supabase.functions.invoke('calendar-integration', {
+      const invoke = async (body: any) => {
+        const result = await supabase.functions.invoke('calendar-integration', {
           body,
           headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         });
+        
+        console.log('Raw edge function response:', {
+          hasData: !!result.data,
+          hasError: !!result.error,
+          data: result.data,
+          error: result.error
+        });
+        
+        return result;
+      };
 
       // Initial request using provided range
       let { data, error } = await invoke({
@@ -61,7 +76,6 @@ export class APIService {
         timeMin: effectiveTimeMin,
         timeMax: effectiveTimeMax,
       });
-      console.log('Calendar function result:', { hasData: !!data, hasError: !!error, data, error });
 
       if (error) {
         console.error('Error from calendar function:', error);
