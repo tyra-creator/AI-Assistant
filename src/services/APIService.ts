@@ -35,8 +35,19 @@ export class APIService {
     
     try {
       console.log('=== Step 1: Getting session data ===');
-      // Ensure we forward the user's JWT explicitly
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      // Add timeout protection to session retrieval
+      const sessionTimeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Session retrieval timeout after 10 seconds')), 10000);
+      });
+      
+      const sessionPromise = supabase.auth.getSession();
+      
+      // Race between session retrieval and timeout
+      const { data: sessionData, error: sessionError } = await Promise.race([
+        sessionPromise,
+        sessionTimeoutPromise
+      ]);
       
       if (sessionError) {
         console.error('Session error:', sessionError);
