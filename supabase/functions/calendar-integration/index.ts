@@ -137,9 +137,27 @@ serve(async (req) => {
       }), { status: 401, headers: corsHeaders });
     }
 
-    // Parse and validate request body
-    const body = await req.json();
-    console.log('Request body:', JSON.stringify(body, null, 2));
+    // Parse and validate request body with safe JSON parsing
+    let body;
+    try {
+      const requestText = await req.text();
+      console.log('Raw request text:', requestText.length > 0 ? 'Present' : 'Empty');
+      console.log('Request text preview:', requestText.substring(0, 200));
+      
+      if (!requestText || requestText.trim().length === 0) {
+        throw new Error('Request body is empty');
+      }
+      
+      body = JSON.parse(requestText);
+      console.log('Request body parsed successfully:', JSON.stringify(body, null, 2));
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError.message);
+      return new Response(JSON.stringify({
+        error: 'Invalid request body: ' + parseError.message,
+        details: 'Request body must be valid JSON'
+      }), { status: 400, headers: corsHeaders });
+    }
+    
     const action = body.action;
 
     if (!action) throw new Error('Missing action type');
