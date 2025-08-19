@@ -7,6 +7,32 @@ const corsHeaders = {
   'Content-Type': 'application/json',
 };
 
+// Timeout utility to prevent hanging on external API calls
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 15000) {
+  console.log(`Making request to: ${url} with ${timeoutMs}ms timeout`);
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    console.log(`Request completed with status: ${response.status}`);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.error(`Request timed out after ${timeoutMs}ms for: ${url}`);
+      throw new Error(`Request timeout after ${timeoutMs / 1000} seconds`);
+    }
+    console.error(`Request failed for: ${url}`, error);
+    throw error;
+  }
+}
+
 interface CalendarRequest {
   action: 'get_events' | 'create_event' | 'update_event' | 'delete_event' | 'check_availability';
   date?: string;
@@ -120,10 +146,14 @@ serve(async (req) => {
           console.log('Token refresh successful, new token acquired');
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
+          const isTimeoutError = refreshError.message.includes('timeout');
           return new Response(JSON.stringify({
-            error: 'Authentication expired. Please reconnect your Google account.',
+            error: isTimeoutError 
+              ? 'Connection timeout while refreshing token. Please try again or reconnect your Google account.'
+              : 'Authentication expired. Please reconnect your Google account.',
             needsAuth: true,
-            details: refreshError.message
+            details: refreshError.message,
+            isTimeout: isTimeoutError
           }), { status: 401, headers: corsHeaders });
         }
       }
@@ -217,9 +247,20 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
 
   console.log('Final URL:', url);
 
-  const res = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    }, 20000); // 20 second timeout for calendar API
+  } catch (timeoutError) {
+    console.error('Calendar API request timed out:', timeoutError);
+    return new Response(JSON.stringify({
+      events: [],
+      needsAuth: false,
+      error: 'Calendar request timed out. Please try again.',
+      isTimeout: true
+    }), { headers: corsHeaders });
+  }
 
   console.log('Calendar API response status:', res.status);
 
@@ -277,11 +318,21 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
 
   const endpoint = isMicrosoft ? `${apiBase}/calendar/events` : `${apiBase}/calendars/primary/events`;
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, 15000); // 15 second timeout for create event
+  } catch (timeoutError) {
+    console.error('Create event request timed out:', timeoutError);
+    return new Response(JSON.stringify({
+      error: 'Event creation timed out. Please try again.',
+      success: false,
+      isTimeout: true
+    }), { status: 408, headers: corsHeaders });
+  }
 
   console.log(`Calendar API response status: ${res.status}`);
   
@@ -377,11 +428,11 @@ async function updateEvent(apiBase: string, token: string, isMicrosoft: boolean,
     ? `${apiBase}/calendar/events/${eventId}`
     : `${apiBase}/calendars/primary/events/${eventId}`;
 
-  const res = await fetch(endpoint, {
+  const res = await fetchWithTimeout(endpoint, {
     method: isMicrosoft ? 'PATCH' : 'PUT',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  });
+  }, 15000);
 
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || 'Failed to update event');
@@ -397,10 +448,10 @@ async function deleteEvent(apiBase: string, token: string, isMicrosoft: boolean,
     ? `${apiBase}/calendar/events/${eventId}`
     : `${apiBase}/calendars/primary/events/${eventId}`;
 
-  const res = await fetch(endpoint, {
+  const res = await fetchWithTimeout(endpoint, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${token}` }
-  });
+  }, 15000);
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -429,18 +480,18 @@ async function checkAvailability(apiBase: string, token: string, isMicrosoft: bo
       meetingDuration: 'PT30M'
     };
 
-    const res = await fetch(`${apiBase}/findMeetingTimes`, {
+    const res = await fetchWithTimeout(`${apiBase}/findMeetingTimes`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    });
+    }, 15000);
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message || 'Failed to check availability');
     return new Response(JSON.stringify(data), { headers: corsHeaders });
 
   } else {
-    const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+    const res = await fetchWithTimeout('https://www.googleapis.com/calendar/v3/freeBusy', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -448,7 +499,7 @@ async function checkAvailability(apiBase: string, token: string, isMicrosoft: bo
         timeMax: end_date,
         items: attendeeEmails.map(email => ({ id: email }))
       })
-    });
+    }, 15000);
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message || 'Failed to check availability');
@@ -476,7 +527,7 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
     }
 
     console.log('Attempting to refresh Google token...');
-    const response = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -485,7 +536,7 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
         client_id: clientId,
         client_secret: clientSecret,
       }),
-    });
+    }, 10000); // 10 second timeout for token refresh
 
     const responseText = await response.text();
     console.log('Token refresh response status:', response.status);
