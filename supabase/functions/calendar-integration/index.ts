@@ -33,6 +33,24 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
+// Timeout utility for database operations
+async function withDatabaseTimeout<T>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T> {
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    setTimeout(() => reject(new Error(`Database operation timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
+  });
+  
+  return Promise.race([promise, timeoutPromise]);
+}
+
+// Overall edge function timeout wrapper
+async function withFunctionTimeout<T>(promise: Promise<T>, timeoutMs: number = 25000): Promise<T> {
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    setTimeout(() => reject(new Error(`Function timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
+  });
+  
+  return Promise.race([promise, timeoutPromise]);
+}
+
 interface CalendarRequest {
   action: 'get_events' | 'create_event' | 'update_event' | 'delete_event' | 'check_availability';
   date?: string;
@@ -68,6 +86,8 @@ serve(async (req) => {
   }
 
   try {
+    // Wrap entire function execution in timeout protection
+    return await withFunctionTimeout(async () => {
     console.log('Initializing Supabase client...');
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') || '',
@@ -104,11 +124,13 @@ serve(async (req) => {
 
     // Get user's calendar tokens with expiration info
     console.log('Fetching user profile and tokens...');
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('google_access_token, microsoft_access_token, google_refresh_token, microsoft_refresh_token, google_expires_at, microsoft_expires_at')
-      .eq('user_id', user.id)
-      .single();
+    const { data: profile, error: profileError } = await withDatabaseTimeout(
+      supabase
+        .from('profiles')
+        .select('google_access_token, microsoft_access_token, google_refresh_token, microsoft_refresh_token, google_expires_at, microsoft_expires_at')
+        .eq('user_id', user.id)
+        .single()
+    );
 
     console.log('Profile query result:', { 
       hasProfile: !!profile, 
@@ -201,10 +223,22 @@ serve(async (req) => {
       case 'check_availability': return await checkAvailability(apiBase, accessToken, isMicrosoft, body);
       default: throw new Error(`Unsupported action: ${action}`);
     }
+    }, 25000); // 25 second overall function timeout
 
   } catch (error) {
     const isAuth = String(error.message).toLowerCase().includes('unauthorized');
+    const isTimeout = String(error.message).toLowerCase().includes('timeout');
     console.error('Calendar function error:', error);
+    
+    if (isTimeout) {
+      return new Response(JSON.stringify({
+        error: 'Request timed out. Please try again or check your internet connection.',
+        events: [],
+        needsAuth: false,
+        isTimeout: true
+      }), { status: 408, headers: corsHeaders });
+    }
+    
     return new Response(JSON.stringify({
       error: error.message || 'Internal error',
       events: [],
@@ -570,14 +604,17 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
 
     console.log('Token refreshed, updating database...');
     
-    // Update the database with new token
-    await supabase
-      .from('profiles')
-      .update({
-        google_access_token: newAccessToken,
-        google_expires_at: expiresAt.toISOString(),
-      })
-      .eq('user_id', userId);
+    // Update the database with new token using timeout protection
+    await withDatabaseTimeout(
+      supabase
+        .from('profiles')
+        .update({
+          google_access_token: newAccessToken,
+          google_expires_at: expiresAt.toISOString(),
+        })
+        .eq('user_id', userId),
+      10000 // 10 second timeout for database update
+    );
 
     console.log('Google token refreshed successfully');
     return newAccessToken;

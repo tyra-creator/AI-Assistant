@@ -150,9 +150,10 @@ export class APIService {
         console.log(`=== Step 3: Invoking calendar-integration (attempt ${retryCount + 1}) ===`);
         
         try {
-          // Add timeout wrapper
+          // Add timeout wrapper with exponential backoff
+          const timeoutDuration = retryCount === 0 ? 40000 : 30000; // 40s first attempt, 30s retries
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000);
+            setTimeout(() => reject(new Error(`Request timeout after ${timeoutDuration / 1000} seconds`)), timeoutDuration);
           });
           
           const requestPromise = supabase.functions.invoke('calendar-integration', {
