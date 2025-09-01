@@ -168,14 +168,18 @@ serve(async (req) => {
           console.log('Token refresh successful, new token acquired');
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
-          const isTimeoutError = refreshError.message.includes('timeout');
+          const isTimeoutError = refreshError.message.includes('timeout') || refreshError.message.includes('timed out');
+          const isNetworkError = refreshError.message.includes('network') || refreshError.message.includes('connection');
+          
+          console.error('Token refresh failed - returning auth error immediately');
           return new Response(JSON.stringify({
-            error: isTimeoutError 
-              ? 'Connection timeout while refreshing token. Please try again or reconnect your Google account.'
-              : 'Authentication expired. Please reconnect your Google account.',
+            error: isTimeoutError || isNetworkError
+              ? 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.'
+              : 'Your Google Calendar connection expired. Please reconnect your calendar.',
             needsAuth: true,
+            events: [],
             details: refreshError.message,
-            isTimeout: isTimeoutError
+            isTimeout: isTimeoutError || isNetworkError
           }), { status: 401, headers: corsHeaders });
         }
       }
@@ -570,7 +574,7 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
         client_id: clientId,
         client_secret: clientSecret,
       }),
-    }, 10000); // 10 second timeout for token refresh
+    }, 5000); // Reduced to 5 second timeout for faster failure
 
     const responseText = await response.text();
     console.log('Token refresh response status:', response.status);
