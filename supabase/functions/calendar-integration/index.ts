@@ -257,15 +257,20 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
   console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
 
-  // Normalize time range
+  // Normalize time range - cap at 30 days maximum
   const now = new Date();
   const parsedMin = body.timeMin ? new Date(body.timeMin) : now;
   const parsedMax = body.timeMax ? new Date(body.timeMax) : new Date(parsedMin.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  // Try progressive loading: start with smaller chunks if the range is large
-  const rangeMs = parsedMax.getTime() - parsedMin.getTime();
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  // Cap range to 30 days max
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const boundedMax = (parsedMax.getTime() - parsedMin.getTime() > thirtyDaysMs)
+    ? new Date(parsedMin.getTime() + thirtyDaysMs)
+    : parsedMax;
+
+  // Try progressive loading: start with smaller chunks if the range is large
+  const rangeMs = boundedMax.getTime() - parsedMin.getTime();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
   
   // If requesting more than 14 days, try smaller chunks first for faster response
   const shouldUseProgressiveLoading = rangeMs > 14 * 24 * 60 * 60 * 1000;
@@ -284,7 +289,7 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
         // Try to get remaining events with shorter timeout
         try {
           const remainingEvents = await fetchEventsForRange(
-            apiBase, token, isMicrosoft, smallerMax, parsedMax, 15000 // 15s timeout for remaining
+            apiBase, token, isMicrosoft, smallerMax, boundedMax, 15000 // 15s timeout for remaining
           );
           const allEvents = [...partialEvents, ...remainingEvents];
           console.log(`Progressive loading complete: ${allEvents.length} total events`);
@@ -312,7 +317,7 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   }
 
   // Regular fetch for normal ranges or if progressive loading failed
-  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, parsedMax, 30000); // 30s timeout
+  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, boundedMax, 30000); // 30s timeout
 }
 
 // Helper function to fetch events for a specific time range
@@ -328,10 +333,10 @@ async function fetchEventsForRange(
     ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`
     : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100`;
 
-  // Cap range to 60 days max to prevent huge result sets
-  const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
-  const boundedEndTime = (endTime.getTime() - startTime.getTime() > sixtyDaysMs)
-    ? new Date(startTime.getTime() + sixtyDaysMs)
+  // Cap range to 30 days max
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const boundedEndTime = (endTime.getTime() - startTime.getTime() > thirtyDaysMs)
+    ? new Date(startTime.getTime() + thirtyDaysMs)
     : endTime;
 
   const timeMin = startTime.toISOString();

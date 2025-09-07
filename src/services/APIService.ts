@@ -234,21 +234,8 @@ export class APIService {
       let events = data?.events || [];
       console.log('Initial events received:', events.length);
 
-      // Retry strategy if no events returned: widen window to 60d (bounded)
-      if (Array.isArray(events) && events.length === 0) {
-        console.log('=== Step 6: No events found, retrying with wider window ===');
-        const sixtyDaysEndIso = new Date(new Date(effectiveTimeMin).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
-
-        console.log('No events returned, retrying with wider window (60 days, bounded)');
-        ({ data, error } = await invoke({ action: 'get_events', timeMin: effectiveTimeMin, timeMax: sixtyDaysEndIso }));
-        console.log('Retry (60d) result:', { hasData: !!data, hasError: !!error, data, error });
-
-        if (!error && !data?.needsAuth) {
-          events = data?.events || [];
-          effectiveTimeMax = sixtyDaysEndIso;
-          console.log('Retry events received:', events.length);
-        }
-      }
+      // No retry for wider window - keep within 30 days max
+      console.log('No events found in 30-day window, returning empty result');
 
       console.log('=== Step 7: Filtering events within date range ===');
       // Final safety filter to ensure events are within the requested window
