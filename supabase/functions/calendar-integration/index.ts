@@ -227,7 +227,7 @@ serve(async (req) => {
       case 'check_availability': return await checkAvailability(apiBase, accessToken, isMicrosoft, body);
       default: throw new Error(`Unsupported action: ${action}`);
     }
-    }, 35000); // 35 second overall function timeout to accommodate 30s calendar API timeout
+    }, 25000); // Reduced back to 25 second overall function timeout
 
   } catch (error) {
     const isAuth = String(error.message).toLowerCase().includes('unauthorized');
@@ -275,49 +275,11 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   // If requesting more than 14 days, try smaller chunks first for faster response
   const shouldUseProgressiveLoading = rangeMs > 14 * 24 * 60 * 60 * 1000;
   
-  if (shouldUseProgressiveLoading) {
-    console.log('Large date range detected, using progressive loading');
-    try {
-      // First try with a 7-day window from the start date
-      const smallerMax = new Date(parsedMin.getTime() + sevenDaysMs);
-      const partialEvents = await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, smallerMax);
-      
-      // If successful, try to get the remaining events
-      if (partialEvents.length > 0 || rangeMs <= sevenDaysMs) {
-        console.log(`Got ${partialEvents.length} events from first 7 days, fetching remaining...`);
-        
-        // Try to get remaining events with shorter timeout
-        try {
-          const remainingEvents = await fetchEventsForRange(
-            apiBase, token, isMicrosoft, smallerMax, boundedMax, 15000 // 15s timeout for remaining
-          );
-          const allEvents = [...partialEvents, ...remainingEvents];
-          console.log(`Progressive loading complete: ${allEvents.length} total events`);
-          
-          return new Response(JSON.stringify({
-            events: allEvents,
-            needsAuth: false,
-            error: null
-          }), { headers: corsHeaders });
-        } catch (remainingError) {
-          console.log('Failed to fetch remaining events, returning partial results');
-          return new Response(JSON.stringify({
-            events: partialEvents,
-            needsAuth: false,
-            error: null,
-            partial: true,
-            message: 'Showing partial results due to slow response'
-          }), { headers: corsHeaders });
-        }
-      }
-    } catch (firstChunkError) {
-      console.log('Progressive loading failed, falling back to full range');
-      // Fall through to regular fetch
-    }
-  }
-
-  // Regular fetch for normal ranges or if progressive loading failed
-  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, boundedMax, 30000); // 30s timeout
+  // Disable progressive loading temporarily to simplify and avoid sequential timeouts
+  console.log('Using simplified single request approach');
+  
+  // Regular fetch with aggressive timeout
+  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, boundedMax, 20000); // 20s timeout only
 }
 
 // Helper function to fetch events for a specific time range
@@ -360,18 +322,13 @@ async function fetchEventsForRange(
   } catch (timeoutError) {
     console.error(`Calendar API request timed out after ${timeoutMs}ms:`, timeoutError);
     
-    // If this was a long timeout, throw to trigger fallback
-    if (timeoutMs >= 30000) {
-      return new Response(JSON.stringify({
-        events: [],
-        needsAuth: false,
-        error: 'Calendar request timed out. Please try again or check your internet connection.',
-        isTimeout: true
-      }), { headers: corsHeaders });
-    }
-    
-    // For shorter timeouts, just throw to let caller handle
-    throw timeoutError;
+    // Always return timeout response instead of throwing
+    return new Response(JSON.stringify({
+      events: [],
+      needsAuth: false,
+      error: `Calendar request timed out after ${timeoutMs/1000} seconds. Please try again.`,
+      isTimeout: true
+    }), { headers: corsHeaders });
   }
 
   console.log('Calendar API response status:', res.status);

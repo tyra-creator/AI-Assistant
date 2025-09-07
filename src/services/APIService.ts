@@ -150,8 +150,8 @@ export class APIService {
         console.log(`=== Step 3: Invoking calendar-integration (attempt ${retryCount + 1}) ===`);
         
         try {
-          // Add timeout wrapper with exponential backoff
-          const timeoutDuration = retryCount === 0 ? 50000 : 35000; // 50s first attempt, 35s retries
+          // Reduced timeouts to prevent hanging
+          const timeoutDuration = retryCount === 0 ? 30000 : 25000; // 30s first attempt, 25s retries
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error(`Request timeout after ${timeoutDuration / 1000} seconds`)), timeoutDuration);
           });
