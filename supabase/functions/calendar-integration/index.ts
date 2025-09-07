@@ -227,7 +227,7 @@ serve(async (req) => {
       case 'check_availability': return await checkAvailability(apiBase, accessToken, isMicrosoft, body);
       default: throw new Error(`Unsupported action: ${action}`);
     }
-    }, 25000); // 25 second overall function timeout
+    }, 35000); // 35 second overall function timeout to accommodate 30s calendar API timeout
 
   } catch (error) {
     const isAuth = String(error.message).toLowerCase().includes('unauthorized');
@@ -257,24 +257,86 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
   console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
 
-  let url = isMicrosoft
-    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`
-    : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100`;
-
-  // Normalize and bound time range
+  // Normalize time range
   const now = new Date();
   const parsedMin = body.timeMin ? new Date(body.timeMin) : now;
   const parsedMax = body.timeMax ? new Date(body.timeMax) : new Date(parsedMin.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+  // Try progressive loading: start with smaller chunks if the range is large
+  const rangeMs = parsedMax.getTime() - parsedMin.getTime();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  
+  // If requesting more than 14 days, try smaller chunks first for faster response
+  const shouldUseProgressiveLoading = rangeMs > 14 * 24 * 60 * 60 * 1000;
+  
+  if (shouldUseProgressiveLoading) {
+    console.log('Large date range detected, using progressive loading');
+    try {
+      // First try with a 7-day window from the start date
+      const smallerMax = new Date(parsedMin.getTime() + sevenDaysMs);
+      const partialEvents = await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, smallerMax);
+      
+      // If successful, try to get the remaining events
+      if (partialEvents.length > 0 || rangeMs <= sevenDaysMs) {
+        console.log(`Got ${partialEvents.length} events from first 7 days, fetching remaining...`);
+        
+        // Try to get remaining events with shorter timeout
+        try {
+          const remainingEvents = await fetchEventsForRange(
+            apiBase, token, isMicrosoft, smallerMax, parsedMax, 15000 // 15s timeout for remaining
+          );
+          const allEvents = [...partialEvents, ...remainingEvents];
+          console.log(`Progressive loading complete: ${allEvents.length} total events`);
+          
+          return new Response(JSON.stringify({
+            events: allEvents,
+            needsAuth: false,
+            error: null
+          }), { headers: corsHeaders });
+        } catch (remainingError) {
+          console.log('Failed to fetch remaining events, returning partial results');
+          return new Response(JSON.stringify({
+            events: partialEvents,
+            needsAuth: false,
+            error: null,
+            partial: true,
+            message: 'Showing partial results due to slow response'
+          }), { headers: corsHeaders });
+        }
+      }
+    } catch (firstChunkError) {
+      console.log('Progressive loading failed, falling back to full range');
+      // Fall through to regular fetch
+    }
+  }
+
+  // Regular fetch for normal ranges or if progressive loading failed
+  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, parsedMax, 30000); // 30s timeout
+}
+
+// Helper function to fetch events for a specific time range
+async function fetchEventsForRange(
+  apiBase: string, 
+  token: string, 
+  isMicrosoft: boolean, 
+  startTime: Date, 
+  endTime: Date,
+  timeoutMs: number = 30000
+) {
+  let url = isMicrosoft
+    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`
+    : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100`;
+
   // Cap range to 60 days max to prevent huge result sets
   const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
-  const boundedMax = (parsedMax.getTime() - parsedMin.getTime() > sixtyDaysMs)
-    ? new Date(parsedMin.getTime() + sixtyDaysMs)
-    : parsedMax;
+  const boundedEndTime = (endTime.getTime() - startTime.getTime() > sixtyDaysMs)
+    ? new Date(startTime.getTime() + sixtyDaysMs)
+    : endTime;
 
-  const timeMin = parsedMin.toISOString();
-  const timeMax = boundedMax.toISOString();
-  console.log('Normalized time window:', { timeMin, timeMax });
+  const timeMin = startTime.toISOString();
+  const timeMax = boundedEndTime.toISOString();
+  console.log('Fetching events for time window:', { timeMin, timeMax, timeoutMs });
 
   // Always apply both bounds
   if (isMicrosoft) {
@@ -283,27 +345,34 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
     url += `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
   }
 
-  console.log('Final URL:', url);
+  console.log('API URL:', url);
 
   let res;
   try {
     res = await fetchWithTimeout(url, {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    }, 20000); // 20 second timeout for calendar API
+    }, timeoutMs);
   } catch (timeoutError) {
-    console.error('Calendar API request timed out:', timeoutError);
-    return new Response(JSON.stringify({
-      events: [],
-      needsAuth: false,
-      error: 'Calendar request timed out. Please try again.',
-      isTimeout: true
-    }), { headers: corsHeaders });
+    console.error(`Calendar API request timed out after ${timeoutMs}ms:`, timeoutError);
+    
+    // If this was a long timeout, throw to trigger fallback
+    if (timeoutMs >= 30000) {
+      return new Response(JSON.stringify({
+        events: [],
+        needsAuth: false,
+        error: 'Calendar request timed out. Please try again or check your internet connection.',
+        isTimeout: true
+      }), { headers: corsHeaders });
+    }
+    
+    // For shorter timeouts, just throw to let caller handle
+    throw timeoutError;
   }
 
   console.log('Calendar API response status:', res.status);
 
   const responseText = await res.text();
-  console.log('Calendar API response text:', responseText);
+  console.log('Calendar API response text length:', responseText.length);
 
   let data;
   try {
@@ -320,13 +389,8 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
 
   const events = isMicrosoft ? data.value : data.items;
   console.log('Parsed events count:', events?.length || 0);
-  console.log('Sample events:', events?.slice(0, 2));
-
-  return new Response(JSON.stringify({
-    events: events || [],
-    needsAuth: false,
-    error: null
-  }), { headers: corsHeaders });
+  
+  return events || [];
 }
 
 // CREATE EVENT

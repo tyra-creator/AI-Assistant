@@ -151,7 +151,7 @@ export class APIService {
         
         try {
           // Add timeout wrapper with exponential backoff
-          const timeoutDuration = retryCount === 0 ? 40000 : 30000; // 40s first attempt, 30s retries
+          const timeoutDuration = retryCount === 0 ? 50000 : 35000; // 50s first attempt, 35s retries
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error(`Request timeout after ${timeoutDuration / 1000} seconds`)), timeoutDuration);
           });
