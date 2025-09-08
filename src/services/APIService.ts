@@ -26,34 +26,54 @@ export class APIService {
     this.conversationId = null;
   }
 
-  // Session cache to avoid repeated problematic getSession calls
+  // Session cache and request debouncing
   private static sessionCache: { session: any; timestamp: number } | null = null;
-  private static readonly SESSION_CACHE_DURATION = 30000; // 30 seconds
+  private static readonly SESSION_CACHE_DURATION = 60000; // 1 minute
+  private static pendingCalendarRequests = new Map<string, Promise<any>>();
+  private static sessionPromise: Promise<{ session: any; error?: any }> | null = null;
 
   /**
-   * Get session with timeout and fallback mechanisms
+   * Get session with proper caching and validation
    */
   private static async getSessionWithFallback(): Promise<{ session: any; error?: any }> {
     console.log('=== Step 1: Getting session data ===');
     
-    // Check cache first
+    // Check cache first - enhanced validation
     if (this.sessionCache && Date.now() - this.sessionCache.timestamp < this.SESSION_CACHE_DURATION) {
       console.log('Using cached session');
-      return { session: this.sessionCache.session };
+      // Validate cached session
+      if (this.sessionCache.session?.access_token && this.sessionCache.session?.access_token !== 'fallback') {
+        return { session: this.sessionCache.session };
+      } else {
+        console.log('Cached session invalid, clearing cache');
+        this.sessionCache = null;
+      }
     }
 
+    // Use singleton pattern to prevent multiple concurrent session requests
+    if (this.sessionPromise) {
+      console.log('Waiting for existing session request...');
+      return await this.sessionPromise;
+    }
+
+    this.sessionPromise = this.performSessionRetrieval();
     try {
-      // Create timeout promise that rejects properly
-      const timeoutPromise = new Promise<{ data: null; error: any }>((_, reject) => {
-        setTimeout(() => reject(new Error('Session retrieval timeout after 15 seconds')), 15000);
+      const result = await this.sessionPromise;
+      return result;
+    } finally {
+      this.sessionPromise = null;
+    }
+  }
+
+  private static async performSessionRetrieval(): Promise<{ session: any; error?: any }> {
+    try {
+      console.log('Attempting session retrieval with 5s timeout...');
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Session retrieval timeout after 5 seconds')), 5000);
       });
 
-      // Create session promise with proper typing
       const sessionPromise = supabase.auth.getSession();
-
-      console.log('Attempting session retrieval with 15s timeout...');
-      
-      // Race between session and timeout
       const result = await Promise.race([sessionPromise, timeoutPromise]);
       
       const { data: sessionData, error: sessionError } = result;
@@ -63,7 +83,7 @@ export class APIService {
         throw new Error(`Session error: ${sessionError.message}`);
       }
 
-      if (sessionData?.session) {
+      if (sessionData?.session?.access_token) {
         // Cache the successful session
         this.sessionCache = {
           session: sessionData.session,
@@ -73,24 +93,49 @@ export class APIService {
         return { session: sessionData.session };
       }
 
-      console.warn('No session found in response');
-      return { session: null, error: 'No session found' };
+      throw new Error('No valid session found');
 
     } catch (error: any) {
       console.error('Session retrieval failed:', error.message);
       
-      // Try to get session from current auth state as fallback
+      // Try to get current auth state as fallback - but get a real session
       try {
-        console.log('Attempting session fallback from auth state...');
-        const user = supabase.auth.getUser();
+        console.log('Attempting auth state fallback...');
+        const { data: userData } = await supabase.auth.getUser();
         
-        // If we have a user, try to construct a minimal session
-        if (user) {
-          console.log('Fallback: found user in auth state');
-          return { session: { user, access_token: 'fallback' } };
+        if (userData?.user) {
+          console.log('Fallback: constructing session from auth state');
+          // Try to get a fresh session one more time with shorter timeout
+          try {
+            const quickSessionPromise = supabase.auth.getSession();
+            const quickTimeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('Quick session timeout')), 2000);
+            });
+            
+            const quickResult = await Promise.race([quickSessionPromise, quickTimeout]);
+            if (quickResult.data?.session?.access_token) {
+              this.sessionCache = {
+                session: quickResult.data.session,
+                timestamp: Date.now()
+              };
+              return { session: quickResult.data.session };
+            }
+          } catch (quickError) {
+            console.log('Quick session retrieval failed, using current user data');
+          }
+          
+          // Last resort - construct minimal session
+          const fallbackSession = {
+            user: userData.user,
+            access_token: userData.user.id, // Use user ID as fallback token
+            refresh_token: null,
+            expires_at: Date.now() + 3600000 // 1 hour from now
+          };
+          
+          return { session: fallbackSession };
         }
       } catch (fallbackError) {
-        console.error('Fallback session retrieval also failed:', fallbackError);
+        console.error('Fallback session retrieval failed:', fallbackError);
       }
 
       return { session: null, error: error.message };
@@ -98,12 +143,37 @@ export class APIService {
   }
 
   /**
-   * Fetch calendar events via Supabase edge function
+   * Fetch calendar events via Supabase edge function with request debouncing
    */
   static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string) {
     console.log('=== APIService.fetchCalendarEvents CALLED ===');
     console.log('Parameters:', { date, startDate, endDate });
     
+    // Create request key for debouncing
+    const requestKey = `${date || 'none'}-${startDate || 'none'}-${endDate || 'none'}`;
+    
+    // Check if there's already a pending request for the same parameters
+    if (this.pendingCalendarRequests.has(requestKey)) {
+      console.log('Debouncing: returning existing request for same parameters');
+      return await this.pendingCalendarRequests.get(requestKey)!;
+    }
+    
+    // Create the request promise
+    const requestPromise = this.performCalendarRequest(date, startDate, endDate);
+    
+    // Store the promise for debouncing
+    this.pendingCalendarRequests.set(requestKey, requestPromise);
+    
+    try {
+      const result = await requestPromise;
+      return result;
+    } finally {
+      // Clean up the pending request
+      this.pendingCalendarRequests.delete(requestKey);
+    }
+  }
+
+  private static async performCalendarRequest(date?: string, startDate?: string, endDate?: string) {
     try {
       const { session: sessionData, error: sessionError } = await this.getSessionWithFallback();
       
@@ -150,8 +220,8 @@ export class APIService {
         console.log(`=== Step 3: Invoking calendar-integration (attempt ${retryCount + 1}) ===`);
         
         try {
-          // Generous timeouts to accommodate token refresh and calendar API calls
-          const timeoutDuration = retryCount === 0 ? 35000 : 30000; // 35s first attempt, 30s retries
+          // Optimized timeouts - shorter for better user experience
+          const timeoutDuration = retryCount === 0 ? 20000 : 15000; // 20s first attempt, 15s retries
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error(`Request timeout after ${timeoutDuration / 1000} seconds`)), timeoutDuration);
           });
@@ -166,18 +236,28 @@ export class APIService {
           
           const result = await Promise.race([requestPromise, timeoutPromise]) as any;
           
-          console.log('Raw edge function response:', {
+          console.log('Edge function response summary:', {
             hasData: !!result.data,
             hasError: !!result.error,
-            data: result.data,
-            error: result.error,
+            status: result.data?.status || 'unknown',
             attempt: retryCount + 1
           });
           
-          // If we get a network error or timeout, retry up to 2 times
-          if (result.error && retryCount < 2) {
-            console.log(`Retrying request (attempt ${retryCount + 2}) due to error:`, result.error);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          // Success or recoverable error
+          if (!result.error || result.data) {
+            return result;
+          }
+          
+          // Only retry on network/timeout errors, not auth errors
+          const isRetryable = result.error && (
+            result.error.message?.includes('timeout') ||
+            result.error.message?.includes('network') ||
+            result.error.message?.includes('connection')
+          );
+          
+          if (isRetryable && retryCount < 1) { // Reduced from 2 to 1 retry
+            console.log(`Retrying request (attempt ${retryCount + 2}) due to retryable error:`, result.error);
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Fixed 2s delay
             return invoke(body, retryCount + 1);
           }
           
@@ -186,9 +266,11 @@ export class APIService {
         } catch (invokeError: any) {
           console.error('Calendar function invocation error:', invokeError);
           
-          if (retryCount < 2) {
-            console.log(`Retrying due to exception (attempt ${retryCount + 2}):`, invokeError.message);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          const isTimeoutError = invokeError.message?.includes('timeout');
+          
+          if (isTimeoutError && retryCount < 1) {
+            console.log(`Retrying due to timeout (attempt ${retryCount + 2})`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
             return invoke(body, retryCount + 1);
           }
           
