@@ -248,7 +248,7 @@ function extractMeetingDetails(message: string, state: any) {
   
   console.log('Normalized message:', normalizedMessage);
 
-  // Fix comma-separated format handling (e.g., "sales meeting, today 5pm")
+  // Enhanced comma-separated format handling (e.g., "sales meeting, today 5pm")
   const commaMatch = normalizedMessage.match(/^([^,]+),\s*(.+)$/);
   console.log('Comma separated match:', commaMatch);
   
@@ -257,17 +257,18 @@ function extractMeetingDetails(message: string, state: any) {
     console.log('Potential title from comma format:', potentialTitle.trim());
     console.log('Potential time section:', potentialTimeSection.trim());
     
-    // Improved time validation - check for actual time patterns
-    const timeIndicators = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|at\s+\d|\b(?:today|tomorrow|tonight|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b)/i;
+    // Enhanced time validation - check for time patterns or day indicators
+    const timeIndicators = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|at\s+\d|\b(?:today|tomorrow|tonight|this|next|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\d+\s*(?:pm|am))/i;
     const hasTimeIndicator = timeIndicators.test(potentialTimeSection);
     console.log('Has time indicator:', hasTimeIndicator, 'in:', potentialTimeSection);
     
     if (hasTimeIndicator && potentialTitle.trim().length > 1) {
-      // Set title from comma format with basic cleaning
+      // Extract and clean title from comma format
       if (!details.title) {
-        const cleanTitle = potentialTitle.trim()
-          .replace(/^(?:book|schedule|set up|create)\s+(?:a\s+)?/i, '') // Remove action prefixes
-          .replace(/\s+meeting$/i, '') // Remove " meeting" suffix
+        let cleanTitle = potentialTitle.trim()
+          .replace(/^(?:book|schedule|set up|create)\s+(?:a\s+)?(?:meeting\s+(?:for|about|regarding)\s+)?/i, '') // Remove action prefixes
+          .replace(/^(?:a\s+|the\s+)(?:meeting\s+(?:for|about|regarding)\s+)?/i, '') // Remove article prefixes
+          .replace(/\s+(?:meeting|appointment|call)$/i, '') // Remove meeting-type suffixes
           .trim();
         
         if (cleanTitle.length > 1) {
@@ -276,7 +277,7 @@ function extractMeetingDetails(message: string, state: any) {
         }
       }
       
-      // Extract time from the time section with better patterns
+      // Extract time from the time section
       if (!details.time) {
         let timeExtracted = potentialTimeSection.trim();
         
@@ -284,6 +285,9 @@ function extractMeetingDetails(message: string, state: any) {
         const specificTimeMatch = timeExtracted.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
         if (specificTimeMatch) {
           timeExtracted = specificTimeMatch[1];
+        } else {
+          // Use the whole time section for day-based times
+          timeExtracted = timeExtracted;
         }
         
         details.time = timeExtracted;
@@ -337,30 +341,30 @@ function extractMeetingDetails(message: string, state: any) {
     console.log('Clean message after time removal:', cleanMessage);
   }
 
-  // Improved title extraction patterns (ordered by specificity)
+  // Enhanced title extraction patterns (ordered by reliability for natural language)
   const titlePatterns = [
+    // Quoted titles (highest priority - most explicit)
+    /["'`](.+?)["'`]/i,
+    
     // Explicit title indicators
     /(?:title|subject|name|regarding|about):\s*(.+?)(?:\s+(?:at|on|for).*)?$/i,
     
-    // Meeting scheduling with clear structure
-    /(?:let'?s\s+meet\s+about|schedule\s+(?:a\s+)?meeting\s+(?:for|about|regarding))\s+(.+?)(?:\s+(?:at|on|for).*)?$/i,
-    /(?:set\s+up|create|book)\s+(?:a\s+)?(?:meeting|appointment)\s+(?:for|about|regarding|called|titled)\s+["']?(.+?)["']?(?:\s+(?:at|on|for).*)?$/i,
-    
-    // Clear meeting context
+    // Clear meeting context with prepositions
     /(?:meeting|appointment|call|session)\s+(?:for|about|regarding|called|titled|on|with)\s+["']?(.+?)["']?(?:\s+(?:at|on|for).*)?$/i,
     /(?:have\s+(?:a\s+)?(?:meeting|call)\s+(?:about|on|regarding))\s+(.+?)(?:\s+(?:at|on|for).*)?$/i,
+    
+    // Scheduling with structure
+    /(?:let'?s\s+meet\s+about|schedule\s+(?:a\s+)?meeting\s+(?:for|about|regarding))\s+(.+?)(?:\s+(?:at|on|for).*)?$/i,
+    /(?:set\s+up|create|book)\s+(?:a\s+)?(?:meeting|appointment)\s+(?:for|about|regarding|called|titled)\s+["']?(.+?)["']?(?:\s+(?:at|on|for).*)?$/i,
     
     // Discussion patterns
     /(?:we\s+(?:will|need\s+to)\s+discuss|let'?s\s+talk\s+about|agenda\s+(?:is|includes?))\s+(.+?)(?:\s+(?:at|on|for).*)?$/i,
     
-    // Quoted titles
-    /["'`](.+?)["'`]/i,
+    // After action words - more permissive for natural language
+    /^(?:book|schedule|set\s+up|create|plan|arrange)\s+(?:a\s+)?(?:meeting\s+(?:for|about|with)\s+)?(.+?)$/i,
     
-    // After action words (book, schedule, etc.)
-    /^(?:book|schedule|set up|create)\s+(?:a\s+)?(?:meeting\s+(?:for|about)\s+)?(.+?)$/i,
-    
-    // Simple fallback - capture remaining content as title
-    /^(.+?)(?:\s+meeting)?$/i
+    // Simple fallback - capture main content, clean better
+    /^(.+?)(?:\s+(?:meeting|appointment|call|session))?$/i
   ];
 
   // Extract title if not already found
@@ -377,9 +381,10 @@ function extractMeetingDetails(message: string, state: any) {
         let extractedTitle = titleMatch[1].trim();
         console.log('Raw extracted title:', extractedTitle);
         
-        // Improved title cleaning
+        // Enhanced title cleaning for natural language
         extractedTitle = extractedTitle
-          .replace(/^(?:a\s+|the\s+|an\s+)?(?:meeting\s+(?:for|about|regarding)\s+)?/i, '') // Remove prefixes
+          .replace(/^(?:a\s+|the\s+|an\s+)?(?:meeting\s+(?:for|about|regarding|with)\s+)?/i, '') // Remove prefixes
+          .replace(/^(?:new\s+|quick\s+|brief\s+)?/i, '') // Remove common adjectives  
           .replace(/\s+(?:meeting|appointment|call|session)$/i, '') // Remove suffixes  
           .replace(/[.,;!?]*$/, '') // Remove trailing punctuation
           .replace(/\s+/g, ' ') // Normalize spaces
@@ -387,12 +392,13 @@ function extractMeetingDetails(message: string, state: any) {
         
         console.log('Cleaned extracted title:', extractedTitle);
         
-        // Improved validation - more lenient for real meeting titles
+        // More lenient validation for natural meeting titles
         const isValidTitle = extractedTitle.length >= 2 && 
-                           !extractedTitle.match(/^(?:can|could|will|would|should|may|might|do|does|did|is|are|was|were|have|has|had)\s/i) &&
+                           !extractedTitle.match(/^(?:can|could|will|would|should|may|might|please)\s/i) &&
                            !extractedTitle.match(/^(?:you|i|we|they|he|she|it)\s/i) &&
-                           !extractedTitle.match(/^(?:book|set|schedule|create)$/i) &&
-                           !extractedTitle.match(/^(?:today|tomorrow|at|on|for|with)$/i);
+                           !extractedTitle.match(/^(?:book|set|schedule|create|plan|arrange)$/i) &&
+                           !extractedTitle.match(/^(?:today|tomorrow|at|on|for|with|and|or|but)$/i) &&
+                           !extractedTitle.match(/^\d+\s*(?:am|pm)$/i); // Don't allow just time as title
         
         if (isValidTitle) {
           details.title = extractedTitle;
