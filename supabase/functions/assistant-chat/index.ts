@@ -273,8 +273,15 @@ function extractMeetingDetails(message: string, state: any) {
 
   // Improved title extraction patterns
   const titlePatterns = [
-    /titles?:\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
-    /(?:meeting|appointment)\s+(?:for|about|regarding)?\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    // Explicit title patterns
+    /(?:title|subject|name):\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    // Schedule/meeting patterns
+    /(?:schedule|create|set up|book)\s+(?:a\s+)?(?:meeting|appointment)\s+(?:for|about|regarding|called|titled)?\s*["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    // Meeting patterns
+    /(?:meeting|appointment)\s+(?:for|about|regarding|called|titled|with)?\s*["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
+    // Direct title patterns (quoted)
+    /["'](.+?)["'](?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?/i,
+    // Fallback pattern - everything before time/date keywords
     /^(.+?)(?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i
   ];
 
