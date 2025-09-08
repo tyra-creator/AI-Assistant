@@ -72,10 +72,18 @@ const Index = () => {
           timeMax: futureDate.toISOString() 
         });
         
+        // Validate session before making API call
+        if (!session?.access_token) {
+          console.log('No valid session found, skipping calendar fetch');
+          setError('Authentication required to fetch calendar events');
+          return;
+        }
+        
         const response = await APIService.fetchCalendarEvents(
           undefined,
           now.toISOString(),
-          futureDate.toISOString()
+          futureDate.toISOString(),
+          session // Pass session directly
         );
         console.log('Calendar response:', response);
         
@@ -291,10 +299,18 @@ const Index = () => {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + 30);
       
+      // Validate session before making API call
+      if (!session?.access_token) {
+        console.log('No valid session found, skipping calendar refresh');
+        setError('Authentication required to refresh calendar events');
+        return;
+      }
+      
       const response = await APIService.fetchCalendarEvents(
         undefined,
         now.toISOString(),
-        futureDate.toISOString()
+        futureDate.toISOString(),
+        session // Pass session directly
       );
       
       console.log('Refresh response:', response);

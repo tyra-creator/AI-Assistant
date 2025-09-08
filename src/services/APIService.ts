@@ -144,8 +144,9 @@ export class APIService {
 
   /**
    * Fetch calendar events via Supabase edge function with request debouncing
+   * @param session - Optional session to use instead of retrieving internally
    */
-  static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string) {
+  static async fetchCalendarEvents(date?: string, startDate?: string, endDate?: string, session?: any) {
     console.log('=== APIService.fetchCalendarEvents CALLED ===');
     console.log('Parameters:', { date, startDate, endDate });
     
@@ -159,7 +160,7 @@ export class APIService {
     }
     
     // Create the request promise
-    const requestPromise = this.performCalendarRequest(date, startDate, endDate);
+    const requestPromise = this.performCalendarRequest(date, startDate, endDate, session);
     
     // Store the promise for debouncing
     this.pendingCalendarRequests.set(requestKey, requestPromise);
@@ -173,9 +174,20 @@ export class APIService {
     }
   }
 
-  private static async performCalendarRequest(date?: string, startDate?: string, endDate?: string) {
+  private static async performCalendarRequest(date?: string, startDate?: string, endDate?: string, providedSession?: any) {
     try {
-      const { session: sessionData, error: sessionError } = await this.getSessionWithFallback();
+      let sessionData = providedSession;
+      let sessionError = null;
+      
+      // Only fetch session if not provided
+      if (!sessionData) {
+        console.log('No session provided, attempting to retrieve session...');
+        const sessionResult = await this.getSessionWithFallback();
+        sessionData = sessionResult.session;
+        sessionError = sessionResult.error;
+      } else {
+        console.log('Using provided session data');
+      }
       
       if (sessionError || !sessionData) {
         console.error('No valid session found:', sessionError);
@@ -412,6 +424,6 @@ export class APIService {
 }
 
 // Export the fetchCalendarEvents function for backward compatibility
-export const fetchCalendarEvents = async () => {
-  return APIService.fetchCalendarEvents();
+export const fetchCalendarEvents = async (session?: any) => {
+  return APIService.fetchCalendarEvents(undefined, undefined, undefined, session);
 };
