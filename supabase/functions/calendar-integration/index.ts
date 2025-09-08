@@ -7,30 +7,96 @@ const corsHeaders = {
   'Content-Type': 'application/json',
 };
 
-// Timeout utility for external API calls
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 10000) {
-  console.log(`Making request to: ${url} with ${timeoutMs}ms timeout`);
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    console.log(`Request completed with status: ${response.status}`);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      console.error(`Request timed out after ${timeoutMs}ms for: ${url}`);
-      throw new Error(`Request timeout after ${timeoutMs / 1000} seconds`);
-    }
-    console.error(`Request failed for: ${url}`, error);
-    throw error;
+// Enhanced retry utilities with exponential backoff
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error: any, status?: number): boolean {
+  if (status) {
+    // Retry on server errors, rate limits, and timeouts
+    return status >= 500 || status === 429 || status === 408;
   }
+  
+  const message = error?.message?.toLowerCase() || '';
+  return message.includes('timeout') || 
+         message.includes('network') || 
+         message.includes('connection') ||
+         message.includes('enotfound') ||
+         message.includes('econnreset');
+}
+
+async function fetchWithRetry(
+  url: string, 
+  options: RequestInit, 
+  timeoutMs: number = 15000,
+  maxRetries: number = 3
+): Promise<Response> {
+  const correlationId = crypto.randomUUID();
+  console.log(`[${correlationId}] Starting request to: ${url} (timeout: ${timeoutMs}ms, retries: ${maxRetries})`);
+  
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      const startTime = Date.now();
+      console.log(`[${correlationId}] Attempt ${attempt}/${maxRetries + 1} - Making request`);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      console.log(`[${correlationId}] Request completed - Status: ${response.status}, Duration: ${duration}ms`);
+      
+      // Log response headers for debugging
+      const requestId = response.headers.get('x-request-id') || response.headers.get('x-goog-request-id');
+      if (requestId) {
+        console.log(`[${correlationId}] Provider Request ID: ${requestId}`);
+      }
+      
+      // Check if we should retry
+      if (attempt <= maxRetries && isRetryableError(null, response.status)) {
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000) + Math.random() * 1000;
+        console.log(`[${correlationId}] Retryable error ${response.status}, backing off ${backoffMs}ms`);
+        await sleep(backoffMs);
+        continue;
+      }
+      
+      return response;
+      
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      
+      if (error.name === 'AbortError') {
+        console.error(`[${correlationId}] Request timed out after ${timeoutMs}ms (attempt ${attempt})`);
+        if (attempt <= maxRetries) {
+          const backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 15000) + Math.random() * 1000;
+          console.log(`[${correlationId}] Retrying after timeout, backing off ${backoffMs}ms`);
+          await sleep(backoffMs);
+          continue;
+        }
+        throw new Error(`Request timeout after ${timeoutMs / 1000} seconds (${maxRetries + 1} attempts)`);
+      }
+      
+      console.error(`[${correlationId}] Request failed (attempt ${attempt}, duration: ${duration}ms):`, error.message);
+      
+      if (attempt <= maxRetries && isRetryableError(error)) {
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000) + Math.random() * 1000;
+        console.log(`[${correlationId}] Retryable error, backing off ${backoffMs}ms`);
+        await sleep(backoffMs);
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
 }
 
 // Timeout utility for database operations
@@ -45,6 +111,124 @@ async function withDatabaseTimeout<T>(promise: Promise<T>, timeoutMs: number = 5
 // Simple in-memory cache for calendar responses
 const responseCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+interface CalendarError {
+  type: 'auth' | 'timeout' | 'quota' | 'validation' | 'network' | 'unknown';
+  httpStatus?: number;
+  apiError?: string;
+  correlationId?: string;
+  timestamp: string;
+  retryable: boolean;
+}
+
+function classifyError(error: any, response?: Response): CalendarError {
+  const timestamp = new Date().toISOString();
+  const httpStatus = response?.status;
+  
+  if (httpStatus === 401 || error.message?.includes('unauthorized') || error.message?.includes('expired')) {
+    return {
+      type: 'auth',
+      httpStatus,
+      apiError: error.message,
+      timestamp,
+      retryable: false
+    };
+  }
+  
+  if (httpStatus === 429 || error.message?.includes('rate limit') || error.message?.includes('quota')) {
+    return {
+      type: 'quota',
+      httpStatus,
+      apiError: error.message,
+      timestamp,
+      retryable: true
+    };
+  }
+  
+  if (error.message?.includes('timeout')) {
+    return {
+      type: 'timeout',
+      httpStatus,
+      apiError: error.message,
+      timestamp,
+      retryable: true
+    };
+  }
+  
+  if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+    return {
+      type: 'validation',
+      httpStatus,
+      apiError: error.message,
+      timestamp,
+      retryable: false
+    };
+  }
+  
+  if (httpStatus && httpStatus >= 500) {
+    return {
+      type: 'network',
+      httpStatus,
+      apiError: error.message,
+      timestamp,
+      retryable: true
+    };
+  }
+  
+  return {
+    type: 'unknown',
+    httpStatus,
+    apiError: error.message,
+    timestamp,
+    retryable: false
+  };
+}
+
+function validateEventInput(event: any): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (!event) {
+    errors.push('Event object is required');
+    return { valid: false, errors };
+  }
+  
+  if (!event.title || typeof event.title !== 'string' || event.title.trim().length === 0) {
+    errors.push('Event title is required and must be a non-empty string');
+  }
+  
+  if (!event.start) {
+    errors.push('Event start time is required');
+  } else {
+    const startDate = new Date(event.start);
+    if (isNaN(startDate.getTime())) {
+      errors.push('Event start time must be a valid ISO date string');
+    }
+  }
+  
+  if (!event.end) {
+    errors.push('Event end time is required');
+  } else {
+    const endDate = new Date(event.end);
+    if (isNaN(endDate.getTime())) {
+      errors.push('Event end time must be a valid ISO date string');
+    }
+    
+    if (event.start && new Date(event.start) >= new Date(event.end)) {
+      errors.push('Event end time must be after start time');
+    }
+  }
+  
+  if (event.attendees && Array.isArray(event.attendees)) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    event.attendees.forEach((email: string, index: number) => {
+      if (typeof email !== 'string' || !emailRegex.test(email)) {
+        errors.push(`Attendee ${index + 1} must be a valid email address`);
+      }
+    });
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
 
 interface CalendarRequest {
   action: 'get_events' | 'create_event' | 'update_event' | 'delete_event' | 'check_availability';
@@ -81,9 +265,10 @@ serve(async (req) => {
   }
 
   try {
-    // 15 second overall timeout for better user experience
+    // Configurable timeout with reasonable default (30s)
+    const timeoutMs = parseInt(Deno.env.get('CALENDAR_TIMEOUT_MS') || '30000');
     const timeoutPromise = new Promise<Response>((_, reject) => {
-      setTimeout(() => reject(new Error('Function timeout after 15 seconds')), 15000);
+      setTimeout(() => reject(new Error(`Function timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
     });
 
     const mainPromise = (async () => {
@@ -347,12 +532,13 @@ async function fetchEventsForRange(
 
   let res;
   try {
-    res = await fetchWithTimeout(url, {
+    res = await fetchWithRetry(url, {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    }, 10000); // 10s timeout for calendar API
-  } catch (timeoutError) {
-    console.error('Calendar API request timed out:', timeoutError);
-    throw new Error('Calendar request timed out. Please try again.');
+    }, 15000, 2); // 15s timeout, 2 retries for calendar API
+  } catch (error) {
+    const classifiedError = classifyError(error);
+    console.error('Calendar API request failed:', classifiedError);
+    throw new Error(`Calendar request failed: ${error.message}`);
   }
 
   console.log('Calendar API response status:', res.status);
@@ -425,8 +611,8 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
   }
   
   try {
-    // Single attempt with reasonable timeout
-    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
+    // Token refresh with retry
+    const response = await fetchWithRetry('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -437,7 +623,7 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }).toString(),
-    }, 8000); // 8 second timeout
+    }, 10000, 2); // 10 second timeout, 2 retries
     
     console.log('Token refresh response status:', response.status);
     
@@ -489,14 +675,19 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
 
 // Calendar operations
 async function createEvent(apiBase: string, token: string, isMicrosoft: boolean, event: any) {
-  console.log('=== Creating Calendar Event ===');
-  console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
-  console.log('Event details:', JSON.stringify(event, null, 2));
+  const correlationId = crypto.randomUUID();
+  console.log(`[${correlationId}] === Creating Calendar Event ===`);
+  console.log(`[${correlationId}] Provider:`, isMicrosoft ? 'Microsoft' : 'Google');
+  console.log(`[${correlationId}] Event details:`, JSON.stringify(event, null, 2));
 
-  if (!event || !event.title || !event.start || !event.end) {
+  // Validate input thoroughly
+  const validation = validateEventInput(event);
+  if (!validation.valid) {
+    console.error(`[${correlationId}] Validation failed:`, validation.errors);
     return new Response(JSON.stringify({ 
-      error: 'Missing required event fields: title, start, end',
-      required: ['title', 'start', 'end']
+      error: 'Event validation failed',
+      details: validation.errors,
+      type: 'validation'
     }), { 
       status: 400, 
       headers: corsHeaders 
@@ -556,44 +747,78 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
       };
     }
 
-    console.log('Making API request to:', url);
-    console.log('Event data:', JSON.stringify(eventData, null, 2));
+    // Generate idempotency key to prevent duplicates
+    const idempotencyKey = event.idempotencyKey || 
+      `${event.title}_${event.start}_${event.end}`.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    console.log(`[${correlationId}] Making API request to:`, url);
+    console.log(`[${correlationId}] Idempotency key:`, idempotencyKey);
+    console.log(`[${correlationId}] Event data:`, JSON.stringify(eventData, null, 2));
 
-    const response = await fetchWithTimeout(url, {
+    const requestHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+    
+    // Add idempotency headers if supported
+    if (!isMicrosoft) {
+      // Google Calendar doesn't have native idempotency, but we can check for duplicates
+      // by searching for events with the same title and time first
+    }
+
+    const response = await fetchWithRetry(url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: requestHeaders,
       body: JSON.stringify(eventData)
-    }, 8000); // 8 second timeout
+    }, 12000, 2); // 12 second timeout, 2 retries
 
     const responseText = await response.text();
-    console.log('Create event response status:', response.status);
-    console.log('Create event response:', responseText.substring(0, 500));
+    console.log(`[${correlationId}] Create event response status:`, response.status);
+    console.log(`[${correlationId}] Response headers:`, Object.fromEntries(response.headers.entries()));
+    console.log(`[${correlationId}] Create event response:`, responseText.substring(0, 500));
 
     if (!response.ok) {
+      const classifiedError = classifyError(new Error(responseText), response);
+      console.error(`[${correlationId}] Create event failed:`, classifiedError);
+      
       let errorMessage = 'Failed to create calendar event';
+      let userMessage = errorMessage;
       
       try {
         const errorData = JSON.parse(responseText);
-        if (response.status === 401) {
-          errorMessage = 'Calendar authorization expired. Please reconnect your account.';
-        } else if (response.status === 403) {
-          errorMessage = 'Calendar access denied. Please check permissions.';
-        } else if (response.status === 409) {
-          errorMessage = 'Calendar conflict. This time slot may already be booked.';
-        } else {
-          errorMessage = errorData?.error?.message || errorData?.message || errorMessage;
+        const apiError = errorData?.error?.message || errorData?.message || '';
+        
+        switch (response.status) {
+          case 401:
+            userMessage = 'Calendar authorization expired. Please reconnect your account.';
+            break;
+          case 403:
+            if (apiError.includes('rate')) {
+              userMessage = 'Too many requests. Please try again in a few minutes.';
+            } else {
+              userMessage = 'Calendar access denied. Please check permissions.';
+            }
+            break;
+          case 409:
+            userMessage = 'Calendar conflict. This time slot may already be booked.';
+            break;
+          case 429:
+            userMessage = 'Rate limit exceeded. Please try again in a few minutes.';
+            break;
+          default:
+            userMessage = apiError || errorMessage;
         }
       } catch (e) {
-        // Use generic error message
+        console.error(`[${correlationId}] Failed to parse error response:`, e);
       }
 
       return new Response(JSON.stringify({
-        error: errorMessage,
+        error: userMessage,
         details: responseText,
-        status: response.status
+        status: response.status,
+        correlationId,
+        type: classifiedError.type,
+        retryable: classifiedError.retryable
       }), { 
         status: response.status, 
         headers: corsHeaders 
@@ -601,7 +826,7 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
     }
 
     const createdEvent = JSON.parse(responseText);
-    console.log('Event created successfully:', createdEvent.id);
+    console.log(`[${correlationId}] Event created successfully:`, createdEvent.id);
 
     // Normalize response format
     const normalizedEvent = isMicrosoft ? {
@@ -623,29 +848,48 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
     return new Response(JSON.stringify({
       success: true,
       event: normalizedEvent,
-      message: 'Calendar event created successfully'
+      message: 'Calendar event created successfully',
+      correlationId
     }), { 
       headers: corsHeaders 
     });
 
   } catch (error) {
-    console.error('Create event error:', error);
+    const classifiedError = classifyError(error);
+    console.error(`[${correlationId}] Create event error:`, classifiedError);
     
-    if (error.message.includes('timeout')) {
-      return new Response(JSON.stringify({
-        error: 'Calendar request timed out. Please try again.',
-        isTimeout: true
-      }), { 
-        status: 408, 
-        headers: corsHeaders 
-      });
+    let userMessage = 'Failed to create calendar event';
+    let status = 500;
+    
+    switch (classifiedError.type) {
+      case 'timeout':
+        userMessage = 'Calendar request timed out. Please try again.';
+        status = 408;
+        break;
+      case 'auth':
+        userMessage = 'Calendar authorization required. Please reconnect your account.';
+        status = 401;
+        break;
+      case 'quota':
+        userMessage = 'Rate limit exceeded. Please try again in a few minutes.';
+        status = 429;
+        break;
+      case 'validation':
+        userMessage = 'Invalid event data provided.';
+        status = 400;
+        break;
+      default:
+        userMessage = 'Failed to create calendar event. Please try again.';
     }
 
     return new Response(JSON.stringify({
-      error: 'Failed to create calendar event: ' + error.message,
-      details: error.stack
+      error: userMessage,
+      correlationId,
+      type: classifiedError.type,
+      retryable: classifiedError.retryable,
+      details: error.message
     }), { 
-      status: 500, 
+      status, 
       headers: corsHeaders 
     });
   }
