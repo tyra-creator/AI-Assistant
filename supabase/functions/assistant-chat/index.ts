@@ -260,17 +260,25 @@ function extractMeetingDetails(message: string, state: any) {
     }
   }
 
+  console.log('Starting extraction with existing:', existing);
+  console.log('Original message:', message);
+  
   // Clean message for title extraction
   let cleanMessage = message;
   
   // First, try to extract from comma-separated format: "title, time"
   const commaSeparated = message.match(/^(.+?),\s*(.+)$/);
+  console.log('Comma separated match:', commaSeparated);
+  
   if (commaSeparated && !details.title && !details.time) {
     const potentialTitle = commaSeparated[1].trim();
     const potentialTime = commaSeparated[2].trim();
+    console.log('Potential title:', potentialTitle, 'Potential time:', potentialTime);
     
     // Check if the second part looks like a time
     const timeCheck = potentialTime.match(/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM))/i);
+    console.log('Time check result:', timeCheck);
+    
     if (timeCheck) {
       details.title = potentialTitle;
       details.time = potentialTime;
@@ -280,8 +288,10 @@ function extractMeetingDetails(message: string, state: any) {
   
   // Remove time from message for further processing
   if (details.time) {
+    console.log('Cleaning message, removing time:', details.time);
     cleanMessage = cleanMessage.replace(new RegExp(details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
     cleanMessage = cleanMessage.replace(/,\s*$/, '').trim(); // Remove trailing comma
+    console.log('Clean message after time removal:', cleanMessage);
   }
 
   // Improved title extraction patterns - avoid capturing question words
@@ -300,14 +310,20 @@ function extractMeetingDetails(message: string, state: any) {
 
   // Extract title if not already found
   if (!details.title) {
+    console.log('Trying title patterns on:', cleanMessage);
     for (const pattern of titlePatterns) {
+      console.log('Trying pattern:', pattern);
       const titleMatch = cleanMessage.match(pattern);
+      console.log('Pattern match result:', titleMatch);
+      
       if (titleMatch && titleMatch[1] && titleMatch[1].trim()) {
         let extractedTitle = titleMatch[1].trim();
+        console.log('Raw extracted title:', extractedTitle);
         
         // Clean up extracted title
         extractedTitle = extractedTitle.replace(/^(to|my|calendar|on|for)\s+/i, '');
         extractedTitle = extractedTitle.replace(/\s+(at|on|for|today|tomorrow).*$/i, '');
+        console.log('Cleaned extracted title:', extractedTitle);
         
         if (extractedTitle.length > 1) {
           details.title = extractedTitle;
