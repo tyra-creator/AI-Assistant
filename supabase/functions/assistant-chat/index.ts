@@ -441,6 +441,15 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
 
   const { title, time } = state.meetingDetails;
   
+  // Validate meeting details before creating event
+  if (!title || !time) {
+    console.error('Missing required meeting details:', { title, time });
+    return {
+      response: '❌ I need both a meeting title and time to create the event. Please provide both details.',
+      state: {}
+    };
+  }
+  
   try {
     // Convert time to proper ISO format for calendar API
     const startTime = convertToISODateTime(time);
@@ -463,53 +472,154 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
     
     console.log('Calling calendar integration with headers:', Object.keys(headers));
     
+    const eventData = {
+      title: title,
+      description: `Meeting created via AI assistant`,
+      start: startTime,
+      end: endTime,
+      location: 'TBD',
+      timeZone: 'UTC'
+    };
+    
+    const requestBody = {
+      action: 'create_event',
+      event: eventData
+    };
+    
+    console.log('Calendar request body:', JSON.stringify(requestBody, null, 2));
+    
     const calendarResponse = await fetch('https://xqnqssvypvwnedpaylwz.supabase.co/functions/v1/calendar-integration', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        action: 'create_event',
-        event: {
-          title: title,
-          description: `Meeting created via AI assistant`,
-          start: startTime,
-          end: endTime,
-          location: 'TBD'
-        }
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     console.log('Calendar response status:', calendarResponse.status);
+    const responseText = await calendarResponse.text();
+    console.log('Calendar response body:', responseText);
     
     if (!calendarResponse.ok) {
-      const errorText = await calendarResponse.text();
-      console.error('Calendar integration failed:', errorText);
+      console.error('Calendar integration failed:', responseText);
       
-      // Check if it's an authentication error
-      if (calendarResponse.status === 401 || errorText.includes('Unauthorized') || errorText.includes('invalid claim')) {
-        return {
-          response: `❌ Please log in to your account first to create calendar events. Once logged in, you can schedule meetings directly from this chat.`,
-          state: {}
-        };
+      // Enhanced error handling with specific messages
+      let userMessage = 'Failed to create calendar event';
+      
+      try {
+        const errorData = JSON.parse(responseText);
+        console.log('Parsed error data:', errorData);
+        
+        if (errorData.needsAuth || calendarResponse.status === 401) {
+          return {
+            response: `❌ I couldn't create the calendar event because your calendar connection expired. Please reconnect your Google or Microsoft account in the settings and try again.`,
+            state: {}
+          };
+        }
+        
+        // Handle specific error types
+        if (errorData.type === 'auth') {
+          userMessage = 'Calendar authorization expired. Please reconnect your account.';
+        } else if (errorData.type === 'quota') {
+          userMessage = 'Too many requests to calendar service. Please try again in a few minutes.';
+        } else if (errorData.type === 'timeout') {
+          userMessage = 'Calendar request timed out. Please try again.';
+        } else if (errorData.type === 'validation') {
+          userMessage = 'Invalid event data. Please check the meeting details.';
+        } else {
+          userMessage = errorData.error || userMessage;
+        }
+        
+      } catch (e) {
+        console.error('Failed to parse calendar error response:', e);
+        // Check if it's an authentication error by status
+        if (calendarResponse.status === 401 || responseText.includes('Unauthorized') || responseText.includes('invalid claim')) {
+          return {
+            response: `❌ Please log in to your account first to create calendar events. Once logged in, you can schedule meetings directly from this chat.`,
+            state: {}
+          };
+        }
       }
       
+      const eventTime = new Date(startTime).toLocaleString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
+      
       return {
-        response: `❌ Sorry, I couldn't create the calendar event. Error: ${errorText}\n\nPlease try again or check your calendar connection.`,
+        response: `❌ I had trouble creating the calendar event: ${userMessage}. You can manually add "${title}" to your calendar for ${eventTime}.`,
         state: {}
       };
     }
 
-    const calendarResult = await calendarResponse.json();
-    console.log('Calendar event created:', calendarResult);
+    const calendarResult = JSON.parse(responseText);
+    console.log('Calendar event created successfully:', calendarResult);
+    
+    // Enhanced success message with more details
+    const eventTime = new Date(startTime).toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    
+    let successMessage = `✅ Perfect! I've successfully created your meeting "${title}" for ${eventTime}.`;
+    
+    // Add provider-specific information
+    if (calendarResult.event?.provider) {
+      successMessage += ` The event has been added to your ${calendarResult.event.provider} calendar.`;
+    } else {
+      successMessage += ` The event has been added to your calendar.`;
+    }
+    
+    // Add calendar link if available
+    if (calendarResult.calendarUrl) {
+      successMessage += ` You can view it in your calendar at: ${calendarResult.calendarUrl}`;
+    }
+    
+    // Add event verification status
+    if (calendarResult.event?.verified === false) {
+      successMessage += ' (Note: Event verification is still in progress)';
+    }
     
     return {
-      response: `✅ Meeting scheduled successfully!\n\nTitle: ${title}\nTime: ${time}\n\nYour meeting has been added to your calendar.`,
+      response: successMessage,
       state: {}
     };
     
   } catch (error) {
     console.error('Error creating calendar event:', error);
+    
+    const eventTime = new Date(convertToISODateTime(time)).toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    
+    // Provide specific error messages based on error type
+    if (error.message?.includes('timeout')) {
+      return {
+        response: `❌ The calendar request timed out. Please try again or manually add "${title}" for ${eventTime}.`,
+        state: {}
+      };
+    } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+      return {
+        response: `❌ Network error while connecting to calendar service. Please check your connection and try again.`,
+        state: {}
+      };
+    }
+    
     return {
-      response: `❌ Sorry, I couldn't create the calendar event due to an error: ${error.message}\n\nPlease try again or check your calendar connection.`,
+      response: `❌ I had trouble connecting to your calendar service. You can manually add "${title}" for ${eventTime}.`,
       state: {}
     };
   }
@@ -652,10 +762,47 @@ ReceivedAt: ${new Date(e.received_at).toLocaleString()}`
   }
 }
 
-// Helper function to convert time strings to ISO format with enhanced parsing
+// Helper function to convert time strings to ISO format with enhanced parsing and timezone support
 function convertToISODateTime(timeString: string): string {
+  console.log('Converting time string:', timeString);
+  
   const now = new Date();
-  const today = now.toISOString().split('T')[0]; // Get YYYY-MM-DD
+  
+  // Detect user's timezone (default to UTC if not specified)
+  let userTimezone = 'UTC';
+  let timezoneOffset = 0;
+  
+  // Check for timezone indicators
+  if (timeString.includes('CAT') || timeString.includes('SAST')) {
+    userTimezone = 'CAT';
+    timezoneOffset = 2; // CAT is UTC+2
+  } else if (timeString.includes('EST')) {
+    userTimezone = 'EST';
+    timezoneOffset = -5; // EST is UTC-5
+  } else if (timeString.includes('PST')) {
+    userTimezone = 'PST';
+    timezoneOffset = -8; // PST is UTC-8
+  }
+  
+  // Get target date - default to today
+  let targetDate = now.toISOString().split('T')[0];
+  
+  // Handle relative dates
+  if (timeString.toLowerCase().includes('tomorrow')) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    targetDate = tomorrow.toISOString().split('T')[0];
+  } else if (timeString.toLowerCase().includes('next week')) {
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    targetDate = nextWeek.toISOString().split('T')[0];
+  }
+  
+  // Handle specific dates (YYYY-MM-DD format)
+  const dateMatch = timeString.match(/(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) {
+    targetDate = dateMatch[1];
+  }
   
   // Enhanced parsing for time ranges - take the first time
   let processedTimeString = timeString;
@@ -664,11 +811,13 @@ function convertToISODateTime(timeString: string): string {
   const rangeMatch = timeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)\s*[-–]/i);
   if (rangeMatch) {
     processedTimeString = rangeMatch[0].replace(/[-–]$/, '').trim();
+    console.log('Extracted start time from range:', processedTimeString);
   }
   
   // Parse time from various formats
   const timeMatch = processedTimeString.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/i);
   if (!timeMatch) {
+    console.warn('No time pattern found, defaulting to current time + 1 hour');
     // Default to current time + 1 hour if parsing fails
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
     return oneHourLater.toISOString();
@@ -678,27 +827,39 @@ function convertToISODateTime(timeString: string): string {
   const minute = timeMatch[2] ? parseInt(timeMatch[2].substring(1)) : 0;
   const ampm = timeMatch[3].toLowerCase();
   
+  console.log('Parsed time components:', { hour, minute, ampm, userTimezone, timezoneOffset });
+  
   // Convert to 24-hour format
   if (ampm === 'pm' && hour !== 12) hour += 12;
   if (ampm === 'am' && hour === 12) hour = 0;
   
-  // Check if time mentions "today" or "tomorrow"
-  let targetDate = today;
-  if (timeString.toLowerCase().includes('tomorrow')) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    targetDate = tomorrow.toISOString().split('T')[0];
+  // Apply timezone offset to convert to UTC
+  const utcHour = hour - timezoneOffset;
+  
+  // Handle day boundary crossing
+  let finalDate = targetDate;
+  let finalHour = utcHour;
+  
+  if (utcHour < 0) {
+    // Previous day
+    const date = new Date(targetDate);
+    date.setDate(date.getDate() - 1);
+    finalDate = date.toISOString().split('T')[0];
+    finalHour = 24 + utcHour;
+  } else if (utcHour >= 24) {
+    // Next day
+    const date = new Date(targetDate);
+    date.setDate(date.getDate() + 1);
+    finalDate = date.toISOString().split('T')[0];
+    finalHour = utcHour - 24;
   }
   
-  // Handle timezone offsets (basic support for CAT = UTC+2)
-  let offsetHours = 0;
-  if (timeString.includes('CAT')) {
-    offsetHours = -2; // CAT is UTC+2, so we subtract 2 to get UTC
-  }
+  finalHour = Math.max(0, Math.min(23, finalHour));
   
-  const finalHour = Math.max(0, Math.min(23, hour + offsetHours));
+  const result = `${finalDate}T${finalHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00.000Z`;
+  console.log('Final converted datetime:', result);
   
-  return `${targetDate}T${finalHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
+  return result;
 }
 
 // Helper function to add one hour to a datetime string

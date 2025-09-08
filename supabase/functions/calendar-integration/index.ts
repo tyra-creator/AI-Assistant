@@ -872,6 +872,7 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
 
     const createdEvent = JSON.parse(responseText);
     console.log(`[${correlationId}] Event created successfully:`, createdEvent.id);
+    console.log(`[${correlationId}] Event details:`, JSON.stringify(createdEvent, null, 2));
 
     // Normalize response format
     const normalizedEvent = isMicrosoft ? {
@@ -880,21 +881,57 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
       start: createdEvent.start,
       end: createdEvent.end,
       location: createdEvent.location?.displayName,
-      htmlLink: createdEvent.webLink
+      htmlLink: createdEvent.webLink,
+      provider: 'Microsoft'
     } : {
       id: createdEvent.id,
       summary: createdEvent.summary,
       start: createdEvent.start,
       end: createdEvent.end,
       location: createdEvent.location,
-      htmlLink: createdEvent.htmlLink
+      htmlLink: createdEvent.htmlLink,
+      provider: 'Google'
     };
+
+    // Verify event creation by attempting to fetch it
+    try {
+      console.log(`[${correlationId}] Verifying event creation...`);
+      const verifyUrl = isMicrosoft 
+        ? `${apiBase}/calendar/events/${createdEvent.id}`
+        : `${apiBase}/calendars/primary/events/${createdEvent.id}`;
+      
+      const verifyResponse = await fetchWithRetry(verifyUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }, 5000, 1); // Short timeout, single retry for verification
+      
+      if (verifyResponse.ok) {
+        console.log(`[${correlationId}] Event verification successful`);
+        normalizedEvent.verified = true;
+      } else {
+        console.warn(`[${correlationId}] Event verification failed with status:`, verifyResponse.status);
+        normalizedEvent.verified = false;
+      }
+    } catch (verifyError) {
+      console.warn(`[${correlationId}] Event verification error:`, verifyError.message);
+      normalizedEvent.verified = false;
+    }
+
+    // Generate calendar-specific event URL for better user experience
+    const calendarUrl = isMicrosoft 
+      ? `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(event.title)}`
+      : normalizedEvent.htmlLink || `https://calendar.google.com/calendar/u/0/r/eventedit/${createdEvent.id}`;
 
     return new Response(JSON.stringify({
       success: true,
       event: normalizedEvent,
-      message: 'Calendar event created successfully',
-      correlationId
+      message: `Calendar event "${event.title}" created successfully in your ${isMicrosoft ? 'Microsoft' : 'Google'} calendar`,
+      calendarUrl: calendarUrl,
+      correlationId,
+      timestamp: new Date().toISOString()
     }), { 
       headers: corsHeaders 
     });
