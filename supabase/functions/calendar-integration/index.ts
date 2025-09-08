@@ -150,37 +150,56 @@ serve(async (req) => {
     if (!isMicrosoft && profile.google_expires_at) {
       const expiryTime = new Date(profile.google_expires_at);
       const now = new Date();
-      const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000); // Check 1 hour ahead
+      const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000); // Check 30 minutes ahead instead of 1 hour
       
       console.log('Token expiry check:', {
         expiryTime: expiryTime.toISOString(),
         now: now.toISOString(),
-        oneHourFromNow: oneHourFromNow.toISOString(),
+        thirtyMinutesFromNow: thirtyMinutesFromNow.toISOString(),
         isExpired: expiryTime <= now,
-        willExpireSoon: expiryTime <= oneHourFromNow,
+        willExpireSoon: expiryTime <= thirtyMinutesFromNow,
         hasRefreshToken: !!profile.google_refresh_token
       });
       
-      if (expiryTime <= oneHourFromNow && profile.google_refresh_token) {
+      if (expiryTime <= thirtyMinutesFromNow && profile.google_refresh_token) {
         console.log('Google token expired or expiring soon, refreshing...');
         try {
-          accessToken = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token);
+          const refreshResult = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token, profile.google_access_token, profile.google_expires_at);
+          accessToken = refreshResult.accessToken;
           console.log('Token refresh successful, new token acquired');
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
           const isTimeoutError = refreshError.message.includes('timeout') || refreshError.message.includes('timed out');
           const isNetworkError = refreshError.message.includes('network') || refreshError.message.includes('connection');
           
-          console.error('Token refresh failed - returning auth error immediately');
-          return new Response(JSON.stringify({
-            error: isTimeoutError || isNetworkError
-              ? 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.'
-              : 'Your Google Calendar connection expired. Please reconnect your calendar.',
-            needsAuth: true,
-            events: [],
-            details: refreshError.message,
-            isTimeout: isTimeoutError || isNetworkError
-          }), { status: 401, headers: corsHeaders });
+          // If it's a timeout but token is still valid for more than 5 minutes, continue with current token
+          if ((isTimeoutError || isNetworkError) && accessToken) {
+            const minutesUntilExpiry = (expiryTime.getTime() - now.getTime()) / (1000 * 60);
+            if (minutesUntilExpiry > 5) {
+              console.log(`Token refresh timed out, but current token is still valid for ${Math.round(minutesUntilExpiry)} minutes. Continuing with current token.`);
+              // Continue execution with current token
+            } else {
+              console.error('Token refresh failed and token is about to expire - returning auth error');
+              return new Response(JSON.stringify({
+                error: 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.',
+                needsAuth: true,
+                events: [],
+                details: refreshError.message,
+                isTimeout: true
+              }), { status: 401, headers: corsHeaders });
+            }
+          } else {
+            console.error('Token refresh failed - returning auth error immediately');
+            return new Response(JSON.stringify({
+              error: isTimeoutError || isNetworkError
+                ? 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.'
+                : 'Your Google Calendar connection expired. Please reconnect your calendar.',
+              needsAuth: true,
+              events: [],
+              details: refreshError.message,
+              isTimeout: isTimeoutError || isNetworkError
+            }), { status: 401, headers: corsHeaders });
+          }
         }
       }
     }
@@ -574,82 +593,110 @@ async function checkAvailability(apiBase: string, token: string, isMicrosoft: bo
 }
 
 // Token refresh utility function
-async function refreshGoogleToken(supabase: any, userId: string, refreshToken: string): Promise<string> {
-  try {
-    const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-    const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-    
-    console.log('OAuth credentials check:', { 
-      hasClientId: !!clientId, 
-      hasClientSecret: !!clientSecret,
-      clientIdLength: clientId?.length || 0
-    });
-    
-    if (!clientId || !clientSecret) {
-      console.error('Missing Google OAuth credentials - Client ID or Secret not configured');
-      throw new Error('OAuth credentials not configured. Please check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets.');
-    }
+async function refreshGoogleToken(supabase: any, userId: string, refreshToken: string, currentToken?: string, currentExpiry?: string): Promise<{ accessToken: string, expiresAt: string }> {
+  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+  
+  console.log('OAuth credentials check:', { 
+    hasClientId: !!clientId, 
+    hasClientSecret: !!clientSecret,
+    clientIdLength: clientId?.length || 0
+  });
+  
+  if (!clientId || !clientSecret) {
+    console.error('Missing Google OAuth credentials - Client ID or Secret not configured');
+    throw new Error('OAuth credentials not configured. Please check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets.');
+  }
 
-    console.log('Attempting to refresh Google token...');
-    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    }, 5000); // Reduced to 5 second timeout for faster failure
-
-    const responseText = await response.text();
-    console.log('Token refresh response status:', response.status);
-    console.log('Token refresh response:', responseText);
-
-    if (!response.ok) {
-      console.error('Failed to refresh Google token:', responseText);
+  let lastError;
+  
+  // Try token refresh with retry logic
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`Token refresh attempt ${attempt}`);
       
-      // Parse error for better handling
-      let errorMessage = 'Token refresh failed';
-      try {
-        const errorData = JSON.parse(responseText);
-        if (errorData.error === 'invalid_grant') {
-          errorMessage = 'Refresh token expired. Please reconnect your Google account.';
-        } else if (errorData.error === 'invalid_client') {
-          errorMessage = 'OAuth client configuration error. Please check your Google OAuth setup.';
-        } else {
-          errorMessage = `Token refresh failed: ${errorData.error_description || errorData.error}`;
+      const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }),
+      }, 15000); // Increased to 15 second timeout for token refresh
+
+      const responseText = await response.text();
+      console.log('Token refresh response status:', response.status);
+      console.log('Token refresh response:', responseText);
+
+      if (!response.ok) {
+        console.error('Failed to refresh Google token:', responseText);
+        
+        // Parse error for better handling
+        let errorMessage = 'Token refresh failed';
+        try {
+          const errorData = JSON.parse(responseText);
+          if (errorData.error === 'invalid_grant') {
+            errorMessage = 'Refresh token expired. Please reconnect your Google account.';
+          } else if (errorData.error === 'invalid_client') {
+            errorMessage = 'OAuth client configuration error. Please check your Google OAuth setup.';
+          } else {
+            errorMessage = `Token refresh failed: ${errorData.error_description || errorData.error}`;
+          }
+        } catch (e) {
+          // Use default error message if JSON parsing fails
         }
-      } catch (e) {
-        // Use default error message if JSON parsing fails
+        
+        throw new Error(errorMessage);
+      }
+
+      const data = JSON.parse(responseText);
+      const newAccessToken = data.access_token;
+      const expiresIn = data.expires_in || 3600; // Default to 1 hour
+      const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+      console.log('Token refreshed, updating database...');
+      
+      // Update the database with new token using timeout protection
+      await withDatabaseTimeout(
+        supabase
+          .from('profiles')
+          .update({
+            google_access_token: newAccessToken,
+            google_expires_at: expiresAt.toISOString(),
+          })
+          .eq('user_id', userId),
+        10000 // 10 second timeout for database update
+      );
+
+      console.log('Google token refreshed successfully');
+      return { accessToken: newAccessToken, expiresAt: expiresAt.toISOString() };
+      
+    } catch (error) {
+      lastError = error;
+      console.log(`Token refresh attempt ${attempt} failed:`, error.message);
+      
+      // If this is a timeout and we have a fallback token that's still valid
+      if (error.message.includes('timeout') && currentToken && currentExpiry) {
+        const expiryTime = new Date(currentExpiry).getTime();
+        const now = Date.now();
+        const minutesUntilExpiry = (expiryTime - now) / (1000 * 60);
+        
+        if (minutesUntilExpiry > 5) {
+          console.log(`Token refresh timed out, but current token is still valid for ${Math.round(minutesUntilExpiry)} minutes. Using current token.`);
+          return { accessToken: currentToken, expiresAt: currentExpiry };
+        }
       }
       
-      throw new Error(errorMessage);
+      // If first attempt failed and it's not the last attempt, wait briefly before retry
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
-
-    const data = JSON.parse(responseText);
-    const newAccessToken = data.access_token;
-    const expiresIn = data.expires_in || 3600; // Default to 1 hour
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    console.log('Token refreshed, updating database...');
-    
-    // Update the database with new token using timeout protection
-    await withDatabaseTimeout(
-      supabase
-        .from('profiles')
-        .update({
-          google_access_token: newAccessToken,
-          google_expires_at: expiresAt.toISOString(),
-        })
-        .eq('user_id', userId),
-      10000 // 10 second timeout for database update
-    );
-
-    console.log('Google token refreshed successfully');
-    return newAccessToken;
-  } catch (error) {
-    console.error('Error refreshing Google token:', error);
-    throw error; // Preserve the original error message
   }
+  
+  // If all attempts failed, throw the last error
+  console.error('All token refresh attempts failed:', lastError);
+  throw lastError;
 }
