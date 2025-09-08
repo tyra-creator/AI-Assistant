@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
   'Content-Type': 'application/json',
 };
 
@@ -99,13 +100,22 @@ async function fetchWithRetry(
   throw new Error('Max retries exceeded');
 }
 
-// Timeout utility for database operations
+// Enhanced database timeout with proper cleanup
 async function withDatabaseTimeout<T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> {
+  let timeoutId: number;
+  
   const timeoutPromise = new Promise<T>((_, reject) => {
-    setTimeout(() => reject(new Error(`Database operation timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
+    timeoutId = setTimeout(() => reject(new Error(`Database operation timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
   });
   
-  return Promise.race([promise, timeoutPromise]);
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
 }
 
 // Simple in-memory cache for calendar responses
@@ -272,14 +282,24 @@ serve(async (req) => {
     });
 
     const mainPromise = (async () => {
-      console.log('Initializing Supabase client...');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL') || '',
-        Deno.env.get('SUPABASE_ANON_KEY') || '',
-        {
-          global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
-        }
-      );
+    console.log('Initializing Supabase client...');
+    
+    // Get authorization header and mask for logging
+    const authHeader = req.headers.get('Authorization') || '';
+    const hasBearerToken = authHeader.startsWith('Bearer ');
+    console.log('Auth header present:', !!authHeader, 'Has bearer token:', hasBearerToken);
+    
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') || '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '', // Use service role for server operations
+      {
+        global: { 
+          headers: { 
+            Authorization: authHeader // Pass through for user context
+          } 
+        },
+      }
+    );
 
       // Authenticate user
       console.log('Authenticating user...');
@@ -373,15 +393,15 @@ serve(async (req) => {
         }), { status: 401, headers: corsHeaders });
       }
 
-      // Parse request body
+      // Parse request body with improved logging
       let body;
       try {
         const requestText = await req.text();
-        console.log('Raw request text:', requestText.length > 0 ? 'Present' : 'Empty');
-        console.log('Request text content:', requestText);
+        const hasContent = requestText && requestText.trim().length > 0;
+        console.log('Request body present:', hasContent);
         
-        if (!requestText || requestText.trim().length === 0) {
-          // If no body provided, check if this is a GET request or similar
+        if (!hasContent) {
+          // If no body provided, check URL params as fallback
           console.log('No request body provided, checking URL params...');
           const url = new URL(req.url);
           const action = url.searchParams.get('action');
@@ -389,11 +409,14 @@ serve(async (req) => {
             body = { action };
             console.log('Using URL parameters for action:', action);
           } else {
-            throw new Error('Request body is empty and no action parameter found');
+            return new Response(JSON.stringify({
+              error: 'Request body is empty and no action parameter found',
+              details: 'Provide action in request body or as URL parameter'
+            }), { status: 400, headers: corsHeaders });
           }
         } else {
           body = JSON.parse(requestText);
-          console.log('Request body parsed successfully:', JSON.stringify(body));
+          console.log('Request body parsed successfully with action:', body.action);
         }
       } catch (parseError) {
         console.error('JSON parse error:', parseError.message);
@@ -404,7 +427,12 @@ serve(async (req) => {
       }
       
       const action = body.action;
-      if (!action) throw new Error('Missing action type');
+      if (!action) {
+        return new Response(JSON.stringify({
+          error: 'Missing action type',
+          details: 'Request must include an action field'
+        }), { status: 400, headers: corsHeaders });
+      }
 
       // Route handling
       switch (action) {
@@ -450,8 +478,10 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
   console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
 
-  // Check cache first
-  const cacheKey = `${isMicrosoft ? 'ms' : 'google'}-${body.timeMin}-${body.timeMax}`;
+  // Create normalized cache key with proper ISO dates
+  const normalizedTimeMin = body.timeMin ? new Date(body.timeMin).toISOString() : 'none';
+  const normalizedTimeMax = body.timeMax ? new Date(body.timeMax).toISOString() : 'none';
+  const cacheKey = `${isMicrosoft ? 'ms' : 'google'}-${normalizedTimeMin}-${normalizedTimeMax}`;
   const cached = responseCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     console.log('Returning cached calendar response');
@@ -508,7 +538,7 @@ async function fetchEventsForRange(
   endTime: Date
 ) {
   let url = isMicrosoft
-    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`
+    ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees,id,webLink&$orderby=start/dateTime&$top=100`
     : `${apiBase}/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100`;
 
   // Cap range to 30 days max
@@ -521,9 +551,11 @@ async function fetchEventsForRange(
   const timeMax = boundedEndTime.toISOString();
   console.log('Fetching events for time window:', { timeMin, timeMax });
 
-  // Always apply both bounds
+  // Apply time filters with proper encoding
   if (isMicrosoft) {
-    url += `&$filter=start/dateTime ge '${timeMin}' and end/dateTime le '${timeMax}'`;
+    // Microsoft Graph OData filter with proper encoding
+    const filter = `start/dateTime ge '${timeMin}' and end/dateTime le '${timeMax}'`;
+    url += `&$filter=${encodeURIComponent(filter)}`;
   } else {
     url += `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
   }
@@ -538,25 +570,32 @@ async function fetchEventsForRange(
   } catch (error) {
     const classifiedError = classifyError(error);
     console.error('Calendar API request failed:', classifiedError);
+    
+    // Handle 401 by attempting token refresh
+    if (classifiedError.type === 'auth' && !isMicrosoft) {
+      console.log('Attempting token refresh after 401...');
+      // Token refresh would happen here - simplified for now
+      throw new Error('Calendar authorization expired. Please reconnect your account.');
+    }
+    
     throw new Error(`Calendar request failed: ${error.message}`);
   }
 
   console.log('Calendar API response status:', res.status);
 
   const responseText = await res.text();
-  console.log('Calendar API response text length:', responseText.length);
+  console.log('Calendar API response length:', responseText.length, 'chars');
 
   let data;
   try {
     data = JSON.parse(responseText);
   } catch (e) {
-    console.error('Failed to parse calendar response:', e);
-    console.error('Response text:', responseText.substring(0, 500));
+    console.error('Failed to parse calendar response:', e.message);
     throw new Error('Invalid calendar response format');
   }
 
   if (!res.ok) {
-    console.error('Calendar API error:', res.status, data);
+    console.error('Calendar API error:', res.status, data?.error?.message || 'No error details');
     
     if (res.status === 401) {
       throw new Error('Calendar authorization expired. Please reconnect your account.');
@@ -709,11 +748,11 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
         },
         start: {
           dateTime: event.start,
-          timeZone: 'UTC'
+          timeZone: event.timeZone || 'UTC'
         },
         end: {
           dateTime: event.end,
-          timeZone: 'UTC'
+          timeZone: event.timeZone || 'UTC'
         },
         location: {
           displayName: event.location || ''
@@ -722,22 +761,29 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
           emailAddress: {
             address: email,
             name: email
-          }
+          },
+          type: 'required'
         })) : []
       };
     } else {
       // Google Calendar API format
       url = `${apiBase}/calendars/primary/events`;
+      
+      // Add conferenceDataVersion=1 if conference data is present
+      if (event.conferenceData) {
+        url += '?conferenceDataVersion=1';
+      }
+      
       eventData = {
         summary: event.title,
         description: event.description || '',
         start: {
           dateTime: event.start,
-          timeZone: 'UTC'
+          timeZone: event.timeZone || 'UTC'
         },
         end: {
           dateTime: event.end,
-          timeZone: 'UTC'
+          timeZone: event.timeZone || 'UTC'
         },
         location: event.location || '',
         attendees: event.attendees ? event.attendees.map((email: string) => ({
@@ -774,8 +820,7 @@ async function createEvent(apiBase: string, token: string, isMicrosoft: boolean,
 
     const responseText = await response.text();
     console.log(`[${correlationId}] Create event response status:`, response.status);
-    console.log(`[${correlationId}] Response headers:`, Object.fromEntries(response.headers.entries()));
-    console.log(`[${correlationId}] Create event response:`, responseText.substring(0, 500));
+    console.log(`[${correlationId}] Response length:`, responseText.length, 'chars');
 
     if (!response.ok) {
       const classifiedError = classifyError(new Error(responseText), response);
