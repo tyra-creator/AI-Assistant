@@ -33,6 +33,7 @@ const Index = () => {
   const [sessionId, setSessionId] = useState<string>('');
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { session, isAuthenticated, loading, refreshSession, profile } = useAuth();
@@ -341,7 +342,23 @@ const Index = () => {
       }
     } catch (err) {
       console.error('Calendar refresh error:', err);
-      setError(`Failed to refresh calendar events: ${err.message || 'Unknown error'}`);
+      const errorMessage = err.message || 'Unknown error';
+      
+      // Auto-retry on timeout once  
+      if (errorMessage.includes('timeout') && retryCount < 1) {
+        setRetryCount(prev => prev + 1);
+        toast({
+          title: "Retrying...",
+          description: "Calendar request timed out, retrying automatically...",
+        });
+        
+        setTimeout(() => {
+          refreshEvents();
+        }, 2000);
+        return;
+      }
+      
+      setError(`Failed to refresh calendar events: ${errorMessage}`);
       setNotifications([]);
     } finally {
       setIsProcessing(false);
