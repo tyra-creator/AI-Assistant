@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, MessageCircle, RefreshCw } from 'lucide-react';
+import { Calendar, MessageCircle, RefreshCw, ChevronDown } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import WaveCircle from '@/components/WaveCircle';
@@ -34,6 +35,7 @@ const Index = () => {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [isEventsCollapsed, setIsEventsCollapsed] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { session, isAuthenticated, loading, refreshSession, profile } = useAuth();
@@ -390,56 +392,66 @@ const Index = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
         <div className="md:w-80 p-6 border-r border-primary/20 overflow-y-auto bg-card/30 backdrop-blur-sm flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-montserrat font-semibold flex items-center text-foreground">
-              <Calendar className="h-5 w-5 mr-2 text-accent" />
-              Upcoming Events
-            </h2>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={refreshEvents}
-              className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
+          <Collapsible open={!isEventsCollapsed} onOpenChange={setIsEventsCollapsed}>
+            <div className="flex items-center justify-between mb-6">
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="flex items-center justify-start gap-2 p-0 h-auto hover:bg-transparent font-montserrat font-semibold text-lg text-foreground"
+                >
+                  <Calendar className="h-5 w-5 text-accent" />
+                  Upcoming Events
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isEventsCollapsed ? 'rotate-180' : ''}`} />
+                </Button>
+              </CollapsibleTrigger>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={refreshEvents}
+                className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
 
-          <div className="flex-1">
-            {notifications.length > 0 ? (
-              <div className="space-y-3">
-                {notifications.map((notification) => (
-                  <NotificationCard key={notification.id} notification={notification} />
-                ))}
+            <CollapsibleContent className="flex-1">
+              <div className="flex-1">
+                {notifications.length > 0 ? (
+                  <div className="space-y-3">
+                    {notifications.map((notification) => (
+                      <NotificationCard key={notification.id} notification={notification} />
+                    ))}
+                  </div>
+                ) : error ? (
+                  <div className="space-y-4">
+                    <div className="text-center py-4 px-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+                      <Calendar className="h-6 w-6 mx-auto mb-2 text-amber-500" />
+                      <p className="text-sm text-amber-800 dark:text-amber-200">{error}</p>
+                    </div>
+                    <div className="space-y-3">
+                      <OAuthConnectionCard
+                        provider="google"
+                        isConnected={!!profile?.google_access_token}
+                        userInfo={profile?.google_user_info}
+                        onConnectionChange={() => {}}
+                      />
+                      <OAuthConnectionCard
+                        provider="microsoft"
+                        isConnected={!!profile?.microsoft_access_token}
+                        userInfo={profile?.microsoft_user_info}
+                        onConnectionChange={() => {}}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Calendar className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
+                    <p className="text-muted-foreground text-sm">No upcoming events</p>
+                  </div>
+                )}
               </div>
-            ) : error ? (
-              <div className="space-y-4">
-                <div className="text-center py-4 px-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
-                  <Calendar className="h-6 w-6 mx-auto mb-2 text-amber-500" />
-                  <p className="text-sm text-amber-800 dark:text-amber-200">{error}</p>
-                </div>
-                <div className="space-y-3">
-                  <OAuthConnectionCard
-                    provider="google"
-                    isConnected={!!profile?.google_access_token}
-                    userInfo={profile?.google_user_info}
-                    onConnectionChange={() => {}}
-                  />
-                  <OAuthConnectionCard
-                    provider="microsoft"
-                    isConnected={!!profile?.microsoft_access_token}
-                    userInfo={profile?.microsoft_user_info}
-                    onConnectionChange={() => {}}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Calendar className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
-                <p className="text-muted-foreground text-sm">No upcoming events</p>
-              </div>
-            )}
-          </div>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* User Profile Dropdown - Bottom of Sidebar */}
           <div className="mt-6 pt-4 border-t border-primary/20">
