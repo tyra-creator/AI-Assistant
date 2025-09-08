@@ -43,13 +43,23 @@ async function withDatabaseTimeout<T>(promise: Promise<T>, timeoutMs: number = 1
 }
 
 // Overall edge function timeout wrapper
-async function withFunctionTimeout<T>(promise: Promise<T>, timeoutMs: number = 25000): Promise<T> {
+async function withFunctionTimeout<T>(promise: Promise<T>, timeoutMs: number = 40000): Promise<T> {
   const timeoutPromise = new Promise<T>((_, reject) => {
     setTimeout(() => reject(new Error(`Function timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
   });
   
   return Promise.race([promise, timeoutPromise]);
 }
+
+// Circuit breaker for token refresh failures
+let tokenRefreshFailureCount = 0;
+let lastTokenRefreshAttempt = 0;
+const TOKEN_REFRESH_CIRCUIT_BREAKER_THRESHOLD = 3;
+const TOKEN_REFRESH_CIRCUIT_BREAKER_RESET_TIME = 10 * 60 * 1000; // 10 minutes
+
+// Simple in-memory cache for calendar responses
+const responseCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 interface CalendarRequest {
   action: 'get_events' | 'create_event' | 'update_event' | 'delete_event' | 'check_availability';
@@ -162,43 +172,86 @@ serve(async (req) => {
       });
       
       if (expiryTime <= thirtyMinutesFromNow && profile.google_refresh_token) {
-        console.log('Google token expired or expiring soon, refreshing...');
-        try {
-          const refreshResult = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token, profile.google_access_token, profile.google_expires_at);
-          accessToken = refreshResult.accessToken;
-          console.log('Token refresh successful, new token acquired');
-        } catch (refreshError) {
-          console.error('Token refresh failed:', refreshError);
-          const isTimeoutError = refreshError.message.includes('timeout') || refreshError.message.includes('timed out');
-          const isNetworkError = refreshError.message.includes('network') || refreshError.message.includes('connection');
-          
-          // If it's a timeout but token is still valid for more than 5 minutes, continue with current token
-          if ((isTimeoutError || isNetworkError) && accessToken) {
-            const minutesUntilExpiry = (expiryTime.getTime() - now.getTime()) / (1000 * 60);
-            if (minutesUntilExpiry > 5) {
-              console.log(`Token refresh timed out, but current token is still valid for ${Math.round(minutesUntilExpiry)} minutes. Continuing with current token.`);
-              // Continue execution with current token
-            } else {
-              console.error('Token refresh failed and token is about to expire - returning auth error');
-              return new Response(JSON.stringify({
-                error: 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.',
-                needsAuth: true,
-                events: [],
-                details: refreshError.message,
-                isTimeout: true
-              }), { status: 401, headers: corsHeaders });
-            }
+        // Check circuit breaker
+        const currentTime = Date.now();
+        const timeSinceLastAttempt = currentTime - lastTokenRefreshAttempt;
+        
+        if (tokenRefreshFailureCount >= TOKEN_REFRESH_CIRCUIT_BREAKER_THRESHOLD && 
+            timeSinceLastAttempt < TOKEN_REFRESH_CIRCUIT_BREAKER_RESET_TIME) {
+          console.log('Token refresh circuit breaker is open, skipping refresh attempt');
+          // Use current token if still valid for more than 10 minutes
+          const minutesUntilExpiry = (expiryTime.getTime() - now.getTime()) / (1000 * 60);
+          if (minutesUntilExpiry > 10) {
+            console.log(`Using current token (valid for ${Math.round(minutesUntilExpiry)} minutes) due to circuit breaker`);
           } else {
-            console.error('Token refresh failed - returning auth error immediately');
             return new Response(JSON.stringify({
-              error: isTimeoutError || isNetworkError
-                ? 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.'
-                : 'Your Google Calendar connection expired. Please reconnect your calendar.',
+              error: 'Calendar service temporarily unavailable. Please try again later.',
               needsAuth: true,
               events: [],
-              details: refreshError.message,
-              isTimeout: isTimeoutError || isNetworkError
-            }), { status: 401, headers: corsHeaders });
+              isTimeout: true
+            }), { status: 503, headers: corsHeaders });
+          }
+        } else {
+          console.log('Google token expired or expiring soon, refreshing...');
+          lastTokenRefreshAttempt = currentTime;
+          
+          // Check if current token is still valid for more than 10 minutes - use parallel approach
+          const minutesUntilExpiry = (expiryTime.getTime() - now.getTime()) / (1000 * 60);
+          if (minutesUntilExpiry > 10) {
+            console.log(`Current token still valid for ${Math.round(minutesUntilExpiry)} minutes, proceeding with calendar request while refreshing in background`);
+            // Continue with current token, refresh in background (don't await)
+            refreshGoogleToken(supabase, user.id, profile.google_refresh_token, profile.google_access_token, profile.google_expires_at)
+              .then(() => {
+                console.log('Background token refresh successful');
+                tokenRefreshFailureCount = 0; // Reset on success
+              })
+              .catch((error) => {
+                console.log('Background token refresh failed:', error.message);
+                tokenRefreshFailureCount++;
+              });
+          } else {
+            // Token expires soon, must refresh synchronously
+            try {
+              const refreshResult = await refreshGoogleToken(supabase, user.id, profile.google_refresh_token, profile.google_access_token, profile.google_expires_at);
+              accessToken = refreshResult.accessToken;
+              console.log('Token refresh successful, new token acquired');
+              tokenRefreshFailureCount = 0; // Reset on success
+            } catch (refreshError) {
+              console.error('Token refresh failed:', refreshError);
+              tokenRefreshFailureCount++;
+              
+              const isTimeoutError = refreshError.message.includes('timeout') || refreshError.message.includes('timed out');
+              const isNetworkError = refreshError.message.includes('network') || refreshError.message.includes('connection');
+              
+              // If it's a timeout but token is still valid for more than 5 minutes, continue with current token
+              if ((isTimeoutError || isNetworkError) && accessToken) {
+                const remainingMinutes = (expiryTime.getTime() - now.getTime()) / (1000 * 60);
+                if (remainingMinutes > 5) {
+                  console.log(`Token refresh timed out, but current token is still valid for ${Math.round(remainingMinutes)} minutes. Continuing with current token.`);
+                  // Continue execution with current token
+                } else {
+                  console.error('Token refresh failed and token is about to expire - returning auth error');
+                  return new Response(JSON.stringify({
+                    error: 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.',
+                    needsAuth: true,
+                    events: [],
+                    details: refreshError.message,
+                    isTimeout: true
+                  }), { status: 401, headers: corsHeaders });
+                }
+              } else {
+                console.error('Token refresh failed - returning auth error immediately');
+                return new Response(JSON.stringify({
+                  error: isTimeoutError || isNetworkError
+                    ? 'Connection timeout while refreshing your Google Calendar. Please reconnect your calendar or try again later.'
+                    : 'Your Google Calendar connection expired. Please reconnect your calendar.',
+                  needsAuth: true,
+                  events: [],
+                  details: refreshError.message,
+                  isTimeout: isTimeoutError || isNetworkError
+                }), { status: 401, headers: corsHeaders });
+              }
+            }
           }
         }
       }
@@ -246,7 +299,7 @@ serve(async (req) => {
       case 'check_availability': return await checkAvailability(apiBase, accessToken, isMicrosoft, body);
       default: throw new Error(`Unsupported action: ${action}`);
     }
-    }, 25000); // Reduced back to 25 second overall function timeout
+    }, 40000); // Increased to 40 second overall function timeout
 
   } catch (error) {
     const isAuth = String(error.message).toLowerCase().includes('unauthorized');
@@ -276,6 +329,18 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
   console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
   console.log('Request params:', { timeMin: body.timeMin, timeMax: body.timeMax });
 
+  // Check cache first
+  const cacheKey = `${isMicrosoft ? 'ms' : 'google'}-${body.timeMin}-${body.timeMax}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log('Returning cached calendar response');
+    return new Response(JSON.stringify({
+      events: cached.data,
+      needsAuth: false,
+      cached: true
+    }), { headers: corsHeaders });
+  }
+
   // Normalize time range - cap at 30 days maximum
   const now = new Date();
   const parsedMin = body.timeMin ? new Date(body.timeMin) : now;
@@ -287,18 +352,30 @@ async function getEvents(apiBase: string, token: string, isMicrosoft: boolean, b
     ? new Date(parsedMin.getTime() + thirtyDaysMs)
     : parsedMax;
 
-  // Try progressive loading: start with smaller chunks if the range is large
-  const rangeMs = boundedMax.getTime() - parsedMin.getTime();
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  console.log('Fetching calendar events with optimized timeout strategy');
   
-  // If requesting more than 14 days, try smaller chunks first for faster response
-  const shouldUseProgressiveLoading = rangeMs > 14 * 24 * 60 * 60 * 1000;
-  
-  // Disable progressive loading temporarily to simplify and avoid sequential timeouts
-  console.log('Using simplified single request approach');
-  
-  // Regular fetch with aggressive timeout
-  return await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, boundedMax, 20000); // 20s timeout only
+  try {
+    const events = await fetchEventsForRange(apiBase, token, isMicrosoft, parsedMin, boundedMax, 25000); // 25s timeout for calendar API
+    
+    // Cache successful response
+    if (events && Array.isArray(events)) {
+      responseCache.set(cacheKey, { data: events, timestamp: Date.now() });
+    }
+    
+    return new Response(JSON.stringify({
+      events: events || [],
+      needsAuth: false
+    }), { headers: corsHeaders });
+    
+  } catch (error) {
+    console.error('Calendar fetch error:', error);
+    return new Response(JSON.stringify({
+      events: [],
+      needsAuth: false,
+      error: error.message,
+      isTimeout: error.message.includes('timeout')
+    }), { headers: corsHeaders });
+  }
 }
 
 // Helper function to fetch events for a specific time range
@@ -308,7 +385,7 @@ async function fetchEventsForRange(
   isMicrosoft: boolean, 
   startTime: Date, 
   endTime: Date,
-  timeoutMs: number = 30000
+  timeoutMs: number = 25000
 ) {
   let url = isMicrosoft
     ? `${apiBase}/calendar/events?$select=subject,start,end,location,attendees&$orderby=start/dateTime&$top=100`

@@ -45,13 +45,13 @@ export class APIService {
     try {
       // Create timeout promise that rejects properly
       const timeoutPromise = new Promise<{ data: null; error: any }>((_, reject) => {
-        setTimeout(() => reject(new Error('Session retrieval timeout after 8 seconds')), 8000);
+        setTimeout(() => reject(new Error('Session retrieval timeout after 15 seconds')), 15000);
       });
 
       // Create session promise with proper typing
       const sessionPromise = supabase.auth.getSession();
 
-      console.log('Attempting session retrieval with 8s timeout...');
+      console.log('Attempting session retrieval with 15s timeout...');
       
       // Race between session and timeout
       const result = await Promise.race([sessionPromise, timeoutPromise]);
@@ -150,8 +150,8 @@ export class APIService {
         console.log(`=== Step 3: Invoking calendar-integration (attempt ${retryCount + 1}) ===`);
         
         try {
-          // Reduced timeouts to prevent hanging
-          const timeoutDuration = retryCount === 0 ? 30000 : 25000; // 30s first attempt, 25s retries
+          // Generous timeouts to accommodate token refresh and calendar API calls
+          const timeoutDuration = retryCount === 0 ? 35000 : 30000; // 35s first attempt, 30s retries
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error(`Request timeout after ${timeoutDuration / 1000} seconds`)), timeoutDuration);
           });
