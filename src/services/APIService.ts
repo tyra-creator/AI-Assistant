@@ -298,12 +298,14 @@ export class APIService {
 
       console.log('=== Step 4: Making initial request ===');
       // Initial request using provided range
-      let { data, error } = await invoke({
+      const requestBody = {
         action: 'get_events',
         date,
         timeMin: effectiveTimeMin,
         timeMax: effectiveTimeMax,
-      });
+      };
+      console.log('Request body being sent:', JSON.stringify(requestBody));
+      let { data, error } = await invoke(requestBody);
 
       console.log('=== Step 5: Processing initial response ===');
       if (error) {
