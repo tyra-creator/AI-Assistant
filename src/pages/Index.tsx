@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, MessageCircle, RefreshCw, ChevronDown } from 'lucide-react';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Calendar, MessageCircle, RefreshCw, EyeOff, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import WaveCircle from '@/components/WaveCircle';
@@ -35,7 +34,7 @@ const Index = () => {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [isEventsCollapsed, setIsEventsCollapsed] = useState(false);
+  const [isEventsHidden, setIsEventsHidden] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { session, isAuthenticated, loading, refreshSession, profile } = useAuth();
@@ -392,29 +391,33 @@ const Index = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
         <div className="md:w-80 p-6 border-r border-primary/20 overflow-y-auto bg-card/30 backdrop-blur-sm flex flex-col">
-          <Collapsible open={!isEventsCollapsed} onOpenChange={setIsEventsCollapsed}>
-            <div className="flex items-center justify-between mb-6">
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="flex items-center justify-start gap-2 p-0 h-auto hover:bg-transparent font-montserrat font-semibold text-lg text-foreground"
-                >
+          {!isEventsHidden && (
+            <>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2 font-montserrat font-semibold text-lg text-foreground">
                   <Calendar className="h-5 w-5 text-accent" />
                   Upcoming Events
-                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isEventsCollapsed ? 'rotate-180' : ''}`} />
-                </Button>
-              </CollapsibleTrigger>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={refreshEvents}
-                className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={refreshEvents}
+                    className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setIsEventsHidden(true)}
+                    className="flex items-center gap-1 border-primary/30 hover:bg-primary/10"
+                  >
+                    <EyeOff className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
 
-            <CollapsibleContent className="flex-1">
               <div className="flex-1">
                 {notifications.length > 0 ? (
                   <div className="space-y-3">
@@ -450,8 +453,21 @@ const Index = () => {
                   </div>
                 )}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </>
+          )}
+
+          {isEventsHidden && (
+            <div className="flex items-center justify-center py-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsEventsHidden(false)}
+                className="flex items-center gap-2 border-primary/30 hover:bg-primary/10"
+              >
+                <Eye className="h-4 w-4" />
+                Show Events
+              </Button>
+            </div>
+          )}
 
           {/* User Profile Dropdown - Bottom of Sidebar */}
           <div className="mt-6 pt-4 border-t border-primary/20">
