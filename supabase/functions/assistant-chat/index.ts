@@ -263,12 +263,25 @@ function extractMeetingDetails(message: string, state: any) {
   // Clean message for title extraction
   let cleanMessage = message;
   
-  // Remove command words and time
-  const wordsToRemove = ['add', 'schedule', 'set', 'create', 'book', 'a', 'an', 'the', 'meeting', 'appointment'];
-  cleanMessage = cleanMessage.replace(new RegExp(`\\b(${wordsToRemove.join('|')})\\b`, 'gi'), '').trim();
+  // First, try to extract from comma-separated format: "title, time"
+  const commaSeparated = message.match(/^(.+?),\s*(.+)$/);
+  if (commaSeparated && !details.title && !details.time) {
+    const potentialTitle = commaSeparated[1].trim();
+    const potentialTime = commaSeparated[2].trim();
+    
+    // Check if the second part looks like a time
+    const timeCheck = potentialTime.match(/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM))/i);
+    if (timeCheck) {
+      details.title = potentialTitle;
+      details.time = potentialTime;
+      console.log('Extracted from comma format - Title:', details.title, 'Time:', details.time);
+    }
+  }
   
+  // Remove time from message for further processing
   if (details.time) {
     cleanMessage = cleanMessage.replace(new RegExp(details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
+    cleanMessage = cleanMessage.replace(/,\s*$/, '').trim(); // Remove trailing comma
   }
 
   // Improved title extraction patterns - avoid capturing question words
@@ -280,7 +293,9 @@ function extractMeetingDetails(message: string, state: any) {
     // Meeting patterns with explicit title indicators
     /(?:meeting|appointment)\s+(?:for|about|regarding|called|titled|with)\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
     // Direct title patterns (quoted)
-    /["'](.+?)["'](?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?/i
+    /["'](.+?)["'](?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?/i,
+    // Simple pattern for remaining content after time removal
+    /^(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i
   ];
 
   // Extract title if not already found
@@ -292,9 +307,9 @@ function extractMeetingDetails(message: string, state: any) {
         
         // Clean up extracted title
         extractedTitle = extractedTitle.replace(/^(to|my|calendar|on|for)\s+/i, '');
-        extractedTitle = extractedTitle.replace(/\s+(meeting|appointment)$/i, '');
+        extractedTitle = extractedTitle.replace(/\s+(at|on|for|today|tomorrow).*$/i, '');
         
-        if (extractedTitle.length > 2) {
+        if (extractedTitle.length > 1) {
           details.title = extractedTitle;
           console.log('Found title via pattern:', details.title);
           break;
