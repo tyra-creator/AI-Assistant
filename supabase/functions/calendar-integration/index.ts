@@ -81,9 +81,9 @@ serve(async (req) => {
   }
 
   try {
-    // 20 second overall timeout for better user experience
+    // 15 second overall timeout for better user experience
     const timeoutPromise = new Promise<Response>((_, reject) => {
-      setTimeout(() => reject(new Error('Function timeout after 20 seconds')), 20000);
+      setTimeout(() => reject(new Error('Function timeout after 15 seconds')), 15000);
     });
 
     const mainPromise = (async () => {
@@ -235,7 +235,9 @@ serve(async (req) => {
     return await Promise.race([mainPromise, timeoutPromise]);
 
   } catch (error) {
-    const isAuth = String(error.message).toLowerCase().includes('unauthorized');
+    const isAuth = String(error.message).toLowerCase().includes('unauthorized') || 
+                   String(error.message).toLowerCase().includes('authorization') ||
+                   String(error.message).toLowerCase().includes('expired');
     const isTimeout = String(error.message).toLowerCase().includes('timeout');
     console.error('Calendar function error:', error);
     
@@ -251,7 +253,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       error: error.message || 'Internal error',
       events: [],
-      needsAuth: isAuth
+      needsAuth: isAuth,
+      details: error.stack
     }), { status: isAuth ? 401 : 500, headers: corsHeaders });
   }
 });
@@ -484,12 +487,168 @@ async function refreshGoogleToken(supabase: any, userId: string, refreshToken: s
   }
 }
 
-// Stub functions for other calendar operations
+// Calendar operations
 async function createEvent(apiBase: string, token: string, isMicrosoft: boolean, event: any) {
-  return new Response(JSON.stringify({ error: 'Create event not implemented' }), { 
-    status: 501, 
-    headers: corsHeaders 
-  });
+  console.log('=== Creating Calendar Event ===');
+  console.log('Provider:', isMicrosoft ? 'Microsoft' : 'Google');
+  console.log('Event details:', JSON.stringify(event, null, 2));
+
+  if (!event || !event.title || !event.start || !event.end) {
+    return new Response(JSON.stringify({ 
+      error: 'Missing required event fields: title, start, end',
+      required: ['title', 'start', 'end']
+    }), { 
+      status: 400, 
+      headers: corsHeaders 
+    });
+  }
+
+  try {
+    let eventData;
+    let url;
+
+    if (isMicrosoft) {
+      // Microsoft Graph API format
+      url = `${apiBase}/calendar/events`;
+      eventData = {
+        subject: event.title,
+        body: {
+          contentType: 'HTML',
+          content: event.description || ''
+        },
+        start: {
+          dateTime: event.start,
+          timeZone: 'UTC'
+        },
+        end: {
+          dateTime: event.end,
+          timeZone: 'UTC'
+        },
+        location: {
+          displayName: event.location || ''
+        },
+        attendees: event.attendees ? event.attendees.map((email: string) => ({
+          emailAddress: {
+            address: email,
+            name: email
+          }
+        })) : []
+      };
+    } else {
+      // Google Calendar API format
+      url = `${apiBase}/calendars/primary/events`;
+      eventData = {
+        summary: event.title,
+        description: event.description || '',
+        start: {
+          dateTime: event.start,
+          timeZone: 'UTC'
+        },
+        end: {
+          dateTime: event.end,
+          timeZone: 'UTC'
+        },
+        location: event.location || '',
+        attendees: event.attendees ? event.attendees.map((email: string) => ({
+          email: email
+        })) : [],
+        conferenceData: event.conferenceData || undefined
+      };
+    }
+
+    console.log('Making API request to:', url);
+    console.log('Event data:', JSON.stringify(eventData, null, 2));
+
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(eventData)
+    }, 8000); // 8 second timeout
+
+    const responseText = await response.text();
+    console.log('Create event response status:', response.status);
+    console.log('Create event response:', responseText.substring(0, 500));
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to create calendar event';
+      
+      try {
+        const errorData = JSON.parse(responseText);
+        if (response.status === 401) {
+          errorMessage = 'Calendar authorization expired. Please reconnect your account.';
+        } else if (response.status === 403) {
+          errorMessage = 'Calendar access denied. Please check permissions.';
+        } else if (response.status === 409) {
+          errorMessage = 'Calendar conflict. This time slot may already be booked.';
+        } else {
+          errorMessage = errorData?.error?.message || errorData?.message || errorMessage;
+        }
+      } catch (e) {
+        // Use generic error message
+      }
+
+      return new Response(JSON.stringify({
+        error: errorMessage,
+        details: responseText,
+        status: response.status
+      }), { 
+        status: response.status, 
+        headers: corsHeaders 
+      });
+    }
+
+    const createdEvent = JSON.parse(responseText);
+    console.log('Event created successfully:', createdEvent.id);
+
+    // Normalize response format
+    const normalizedEvent = isMicrosoft ? {
+      id: createdEvent.id,
+      summary: createdEvent.subject,
+      start: createdEvent.start,
+      end: createdEvent.end,
+      location: createdEvent.location?.displayName,
+      htmlLink: createdEvent.webLink
+    } : {
+      id: createdEvent.id,
+      summary: createdEvent.summary,
+      start: createdEvent.start,
+      end: createdEvent.end,
+      location: createdEvent.location,
+      htmlLink: createdEvent.htmlLink
+    };
+
+    return new Response(JSON.stringify({
+      success: true,
+      event: normalizedEvent,
+      message: 'Calendar event created successfully'
+    }), { 
+      headers: corsHeaders 
+    });
+
+  } catch (error) {
+    console.error('Create event error:', error);
+    
+    if (error.message.includes('timeout')) {
+      return new Response(JSON.stringify({
+        error: 'Calendar request timed out. Please try again.',
+        isTimeout: true
+      }), { 
+        status: 408, 
+        headers: corsHeaders 
+      });
+    }
+
+    return new Response(JSON.stringify({
+      error: 'Failed to create calendar event: ' + error.message,
+      details: error.stack
+    }), { 
+      status: 500, 
+      headers: corsHeaders 
+    });
+  }
 }
 
 async function updateEvent(apiBase: string, token: string, isMicrosoft: boolean, eventId: string, updates: any) {
