@@ -212,18 +212,38 @@ async function handleMeetingFlow(message: string, state: any) {
     };
   }
 
-  // Missing information
+  // Step 5: Enhanced fallback mechanisms with contextual guidance
   const missing = [];
-  if (!details.title) missing.push('title');
-  if (!details.time) missing.push('time');
+  const hasTitle = !!details.title;
+  const hasTime = !!details.time;
+  
+  if (!hasTitle) missing.push('title');
+  if (!hasTime) missing.push('time');
+
+  // Provide contextual examples based on what was successfully extracted
+  let contextualResponse = 'To schedule your meeting, please provide:\n';
+  
+  if (!hasTitle && !hasTime) {
+    // Nothing extracted - provide comprehensive examples
+    contextualResponse += `• Meeting title (e.g., "Sales review", "Team standup", "Client presentation")\n`;
+    contextualResponse += `• Date and time (e.g., "Tomorrow 2pm", "Friday 10:30am", "Next Monday 3-4pm")\n\n`;
+    contextualResponse += `💡 You can also say it naturally like: "Sales meeting, tomorrow 5pm"`;
+  } else if (!hasTitle && hasTime) {
+    // Time extracted but no title
+    contextualResponse += `• Meeting title for ${details.time}\n\n`;
+    contextualResponse += `Examples: "Sales review", "Team standup", "Client call", "Project meeting"`;
+  } else if (hasTitle && !hasTime) {
+    // Title extracted but no time  
+    contextualResponse += `• Date and time for "${details.title}"\n\n`;
+    contextualResponse += `Examples: "Tomorrow 2pm", "Friday 10:30am", "Next Monday 3-4pm", "Today 5pm"`;
+  }
 
   return {
-    response: `To schedule your meeting, please provide:\n${missing.map(field => 
-      field === 'title' ? '• Meeting title' : '• Date and time (e.g. "Tomorrow 2-3pm")'
-    ).join('\n')}`,
+    response: contextualResponse,
     state: {
       meetingContext: true,
-      partialDetails: details
+      partialDetails: details,
+      extractionAttempts: (state.extractionAttempts || 0) + 1
     }
   };
 }
@@ -236,89 +256,145 @@ function extractMeetingDetails(message: string, state: any) {
   console.log('Input message:', message);
   console.log('Existing details:', existing);
   
-  // Normalize and clean input message
+  // Step 4: Better Message Processing - Enhanced normalization
   let normalizedMessage = message.toLowerCase().trim();
   let cleanMessage = message.trim();
   
-  // Remove filler words and normalize
+  // Comprehensive message cleaning
   normalizedMessage = normalizedMessage
-    .replace(/\s+(please|could you|can you|would you)\s+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\s+(please|could\s+you|can\s+you|would\s+you|will\s+you)\s+/g, ' ')
+    .replace(/[^\w\s:,'".-]/g, ' ') // Remove special chars except common punctuation
+    .replace(/\s+/g, ' ') // Normalize multiple spaces
     .trim();
   
   console.log('Normalized message:', normalizedMessage);
+  console.log('Clean message for processing:', cleanMessage);
 
-  // Enhanced comma-separated format handling (e.g., "sales meeting, today 5pm")
+  // Step 1: Enhanced Comma-Separated Format Detection
   const commaMatch = normalizedMessage.match(/^([^,]+),\s*(.+)$/);
+  console.log('=== COMMA FORMAT ANALYSIS ===');
   console.log('Comma separated match:', commaMatch);
   
   if (commaMatch) {
     const [, potentialTitle, potentialTimeSection] = commaMatch;
-    console.log('Potential title from comma format:', potentialTitle.trim());
-    console.log('Potential time section:', potentialTimeSection.trim());
+    const cleanPotentialTitle = potentialTitle.trim();
+    const cleanTimeSection = potentialTimeSection.trim();
     
-    // Enhanced time validation - check for time patterns or day indicators
-    const timeIndicators = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|at\s+\d|\b(?:today|tomorrow|tonight|this|next|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\d+\s*(?:pm|am))/i;
-    const hasTimeIndicator = timeIndicators.test(potentialTimeSection);
-    console.log('Has time indicator:', hasTimeIndicator, 'in:', potentialTimeSection);
+    console.log('Potential title from comma format:', `"${cleanPotentialTitle}"`);
+    console.log('Potential time section:', `"${cleanTimeSection}"`);
     
-    if (hasTimeIndicator && potentialTitle.trim().length > 1) {
+    // Step 1: Improved time validation with comprehensive patterns
+    const timeIndicators = /\b(?:
+      # Specific times
+      \d{1,2}(?::\d{2})?\s*(?:am|pm)|
+      # Times with "at"
+      at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)|
+      # Day indicators
+      (?:today|tomorrow|tonight|this\s+(?:morning|afternoon|evening))|
+      # Day names
+      (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|
+      # Relative times
+      (?:this|next)\s+(?:week|month)|
+      # Common time phrases
+      (?:morning|afternoon|evening|night)|
+      # Numeric times without am/pm
+      \d+\s*(?:pm|am)|
+      # Time ranges
+      \d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)
+    )\b/ix;
+    
+    const hasTimeIndicator = timeIndicators.test(cleanTimeSection);
+    console.log('Time indicator analysis:', {
+      hasTimeIndicator,
+      timeSection: cleanTimeSection,
+      regex: timeIndicators.toString()
+    });
+    
+    // Step 1: Take precedence if comma format has valid time and reasonable title
+    if (hasTimeIndicator && cleanPotentialTitle.length >= 2) {
+      console.log('=== COMMA FORMAT TAKES PRECEDENCE ===');
+      
       // Extract and clean title from comma format
       if (!details.title) {
-        let cleanTitle = potentialTitle.trim()
-          .replace(/^(?:book|schedule|set up|create)\s+(?:a\s+)?(?:meeting\s+(?:for|about|regarding)\s+)?/i, '') // Remove action prefixes
-          .replace(/^(?:a\s+|the\s+)(?:meeting\s+(?:for|about|regarding)\s+)?/i, '') // Remove article prefixes
-          .replace(/\s+(?:meeting|appointment|call)$/i, '') // Remove meeting-type suffixes
+        let cleanTitle = cleanPotentialTitle
+          .replace(/^(?:book|schedule|set\s+up|create|plan|arrange)\s+(?:a\s+)?(?:meeting\s+(?:for|about|regarding|with)\s+)?/i, '') // Remove action prefixes
+          .replace(/^(?:a\s+|the\s+|an\s+)(?:meeting\s+(?:for|about|regarding|with)\s+)?/i, '') // Remove article prefixes
+          .replace(/^(?:new\s+|quick\s+|brief\s+|urgent\s+)?/i, '') // Remove common adjectives
+          .replace(/\s+(?:meeting|appointment|call|session)$/i, '') // Remove meeting-type suffixes
+          .replace(/[.,;!?]*$/, '') // Remove trailing punctuation
           .trim();
         
-        if (cleanTitle.length > 1) {
+        console.log('Cleaned title from comma format:', `"${cleanTitle}"`);
+        
+        if (cleanTitle.length >= 2) {
           details.title = cleanTitle;
-          console.log('Set title from comma format:', details.title);
+          console.log('✅ Set title from comma format:', details.title);
         }
       }
       
       // Extract time from the time section
       if (!details.time) {
-        let timeExtracted = potentialTimeSection.trim();
+        let timeExtracted = cleanTimeSection;
         
         // Try to find specific time patterns first
         const specificTimeMatch = timeExtracted.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
         if (specificTimeMatch) {
           timeExtracted = specificTimeMatch[1];
+          console.log('Extracted specific time:', specificTimeMatch[1]);
         } else {
           // Use the whole time section for day-based times
-          timeExtracted = timeExtracted;
+          console.log('Using full time section:', timeExtracted);
         }
         
         details.time = timeExtracted;
-        console.log('Set time from comma format:', details.time);
+        console.log('✅ Set time from comma format:', details.time);
       }
+      
+      // If both title and time extracted from comma format, return early
+      if (details.title && details.time) {
+        console.log('=== COMMA FORMAT SUCCESS - EARLY RETURN ===');
+        console.log('Final extracted details:', details);
+        return details;
+      }
+    } else {
+      console.log('❌ Comma format rejected:', {
+        hasTimeIndicator,
+        titleLength: cleanPotentialTitle.length,
+        reason: !hasTimeIndicator ? 'No time indicator' : 'Title too short'
+      });
     }
   }
 
-  // Simplified time patterns for better detection
+  // Step 2: Enhanced time patterns with better prioritization
   const timePatterns = [
-    // Specific time formats (highest priority)
+    // Step 3: Specific time formats (highest priority)
     /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
-    // Day + time combinations
-    /\b(today|tomorrow)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
-    /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s+(today|tomorrow)\b/i,
-    // Time with "at"
+    // Day + time combinations (high priority)
+    /\b(today|tomorrow|tonight)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
+    /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s+(today|tomorrow|tonight)\b/i,
+    // Time with "at" (medium priority)
     /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
-    // Just days (lower priority)
-    /\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
+    // Time ranges (medium priority)
+    /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i,
+    // Days only (lower priority)
+    /\b(today|tomorrow|tonight|this\s+(?:morning|afternoon|evening))\b/i,
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    // Relative times (lowest priority)
+    /\b(next\s+week|this\s+week|next\s+month)\b/i
   ];
 
   // Extract time if not already found
   if (!details.time) {
-    console.log('Looking for time patterns...');
-    for (const pattern of timePatterns) {
+    console.log('=== TIME EXTRACTION ANALYSIS ===');
+    for (let i = 0; i < timePatterns.length; i++) {
+      const pattern = timePatterns[i];
       const timeMatch = cleanMessage.match(pattern);
+      console.log(`Time pattern ${i + 1} (${pattern}):`, timeMatch ? `Match: "${timeMatch[1] || timeMatch[0]}"` : 'No match');
+      
       if (timeMatch) {
         // Extract the most specific time found
-        details.time = timeMatch[1] || timeMatch[0];
-        details.time = details.time.trim();
-        console.log('Found time:', details.time);
+        details.time = (timeMatch[1] || timeMatch[0]).trim();
+        console.log('✅ Found time:', details.time);
         break;
       }
     }
@@ -392,13 +468,35 @@ function extractMeetingDetails(message: string, state: any) {
         
         console.log('Cleaned extracted title:', extractedTitle);
         
-        // More lenient validation for natural meeting titles
+        // Step 2: Improved validation logic - more context-aware
         const isValidTitle = extractedTitle.length >= 2 && 
-                           !extractedTitle.match(/^(?:can|could|will|would|should|may|might|please)\s/i) &&
-                           !extractedTitle.match(/^(?:you|i|we|they|he|she|it)\s/i) &&
+                           // Reject obvious questions/commands at start
+                           !extractedTitle.match(/^(?:can\s+you|could\s+you|will\s+you|would\s+you|should\s+i|may\s+i|might\s+i|please\s+(?:can|could))\s/i) &&
+                           // But allow valid meeting titles that happen to start with common words
+                           !extractedTitle.match(/^(?:you|they|he|she|it)\s/i) &&
+                           // Don't allow just action words
                            !extractedTitle.match(/^(?:book|set|schedule|create|plan|arrange)$/i) &&
+                           // Don't allow just time/location words  
                            !extractedTitle.match(/^(?:today|tomorrow|at|on|for|with|and|or|but)$/i) &&
-                           !extractedTitle.match(/^\d+\s*(?:am|pm)$/i); // Don't allow just time as title
+                           // Don't allow just time as title
+                           !extractedTitle.match(/^\d+\s*(?:am|pm|:\d+)$/i) &&
+                           // Allow common business words that were previously rejected
+                           !extractedTitle.match(/^(?:the|a|an)$/i);
+        
+        console.log('Title validation result:', {
+          title: extractedTitle,
+          length: extractedTitle.length,
+          isValid: isValidTitle,
+          checks: {
+            lengthCheck: extractedTitle.length >= 2,
+            questionCheck: !extractedTitle.match(/^(?:can\s+you|could\s+you|will\s+you|would\s+you|should\s+i|may\s+i|might\s+i|please\s+(?:can|could))\s/i),
+            pronounCheck: !extractedTitle.match(/^(?:you|they|he|she|it)\s/i),
+            actionWordCheck: !extractedTitle.match(/^(?:book|set|schedule|create|plan|arrange)$/i),
+            timeLocationCheck: !extractedTitle.match(/^(?:today|tomorrow|at|on|for|with|and|or|but)$/i),
+            timeAsTitle: !extractedTitle.match(/^\d+\s*(?:am|pm|:\d+)$/i),
+            articleCheck: !extractedTitle.match(/^(?:the|a|an)$/i)
+          }
+        });
         
         if (isValidTitle) {
           details.title = extractedTitle;
@@ -417,21 +515,38 @@ function extractMeetingDetails(message: string, state: any) {
     console.log('Using existing title:', details.title);
   }
 
-  // Final validation and normalization
+  // Step 4: Enhanced final validation and normalization  
   if (details.title) {
-    // Clean up any remaining artifacts
+    console.log('=== FINAL TITLE PROCESSING ===');
+    console.log('Title before final cleaning:', details.title);
+    
+    // Clean up any remaining artifacts more carefully
     details.title = details.title
-      .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9.,\s]+$/g, '') // Remove special chars from ends
+      .replace(/^[^a-zA-Z0-9]+/, '') // Remove special chars from start only
+      .replace(/[^a-zA-Z0-9.,\s\-'"%&()]+$/, '') // Remove special chars from end, keep common business chars
       .replace(/\s+/g, ' ') // Normalize spaces
       .trim();
     
-    if (details.title.length < 2) {
-      console.log('Title too short, removing:', details.title);
+    console.log('Title after final cleaning:', details.title);
+    
+    // More lenient length check but ensure quality
+    if (details.title.length < 2 || details.title.length > 100) {
+      console.log('Title rejected - invalid length:', details.title.length);
+      details.title = null;
+    } else if (details.title.match(/^[\s.,!?-]+$/)) {
+      console.log('Title rejected - only punctuation:', details.title);
       details.title = null;
     }
   }
 
+  // Step 5: Add success/failure logging for debugging
+  console.log('=== EXTRACTION SUMMARY ===');
+  console.log('Title extraction:', details.title ? `✅ "${details.title}"` : '❌ Failed');
+  console.log('Time extraction:', details.time ? `✅ "${details.time}"` : '❌ Failed'); 
+  console.log('Input was:', message);
+  console.log('Normalized was:', normalizedMessage);
   console.log('Final extracted details:', details);
+  
   return details;
 }
 
