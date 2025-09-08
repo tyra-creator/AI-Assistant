@@ -231,10 +231,50 @@ async function handleMeetingFlow(message: string, state: any) {
 function extractMeetingDetails(message: string, state: any) {
   const existing = state.partialDetails || {};
   const details = { title: existing.title || null, time: existing.time || null };
+  
+  console.log('=== EXTRACTION START ===');
+  console.log('Input message:', message);
+  console.log('Existing details:', existing);
+  
+  // Normalize and clean input message
+  let normalizedMessage = message.toLowerCase().trim();
+  let cleanMessage = message.trim();
+  
+  // Remove filler words and normalize
+  normalizedMessage = normalizedMessage
+    .replace(/\s+(please|could you|can you|would you)\s+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  console.log('Normalized message:', normalizedMessage);
 
-  console.log('Starting extraction with existing:', existing);
+  // Enhanced comma-separated format handling (check this FIRST)
+  const commaSeparated = cleanMessage.match(/^(.+?),\s*(.+)$/);
+  console.log('Comma separated match:', commaSeparated);
+  
+  if (commaSeparated) {
+    const potentialTitle = commaSeparated[1].trim();
+    const potentialTime = commaSeparated[2].trim();
+    console.log('Potential title:', potentialTitle, 'Potential time:', potentialTime);
+    
+    // Enhanced time validation for the second part
+    const timeCheck = potentialTime.match(/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM)|this\s+week|next\s+week)/i);
+    console.log('Time check result:', timeCheck);
+    
+    if (timeCheck) {
+      // Override existing details if we have a clear comma-separated format
+      if (!details.title || potentialTitle.length > 2) {
+        details.title = potentialTitle;
+        console.log('Set title from comma format:', details.title);
+      }
+      if (!details.time || timeCheck) {
+        details.time = potentialTime;
+        console.log('Set time from comma format:', details.time);
+      }
+    }
+  }
 
-// Enhanced time patterns with better range and timezone support
+  // Enhanced time patterns with more variations
   const timePatterns = [
     // Time ranges with timezone
     /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s*[-–]\s*(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
@@ -245,13 +285,16 @@ function extractMeetingDetails(message: string, state: any) {
     /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s+(today|tomorrow)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
     // Basic time patterns
     /\bat\s+(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
-    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi
+    /\b(\d{1,2})(:\d{2})?\s*(am|pm)\s*(CAT|EST|PST|GMT|UTC)?\b/gi,
+    // Just days
+    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
   ];
 
-  // Extract time if not already found
+  // Extract time if not already found or if we need to update it
   if (!details.time) {
+    console.log('Looking for time patterns...');
     for (const pattern of timePatterns) {
-      const timeMatch = message.match(pattern);
+      const timeMatch = cleanMessage.match(pattern);
       if (timeMatch) {
         details.time = timeMatch[0].trim();
         console.log('Found time:', details.time);
@@ -259,60 +302,50 @@ function extractMeetingDetails(message: string, state: any) {
       }
     }
   }
-
-  console.log('Starting extraction with existing:', existing);
-  console.log('Original message:', message);
   
-  // Clean message for title extraction
-  let cleanMessage = message;
-  
-  // First, try to extract from comma-separated format: "title, time"
-  const commaSeparated = message.match(/^(.+?),\s*(.+)$/);
-  console.log('Comma separated match:', commaSeparated);
-  
-  if (commaSeparated && !details.title && !details.time) {
-    const potentialTitle = commaSeparated[1].trim();
-    const potentialTime = commaSeparated[2].trim();
-    console.log('Potential title:', potentialTitle, 'Potential time:', potentialTime);
-    
-    // Check if the second part looks like a time
-    const timeCheck = potentialTime.match(/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|\d{1,2}\s*(?:am|pm|AM|PM))/i);
-    console.log('Time check result:', timeCheck);
-    
-    if (timeCheck) {
-      details.title = potentialTitle;
-      details.time = potentialTime;
-      console.log('Extracted from comma format - Title:', details.title, 'Time:', details.time);
-    }
-  }
-  
-  // Remove time from message for further processing
+  // Clean message by removing time for title extraction
   if (details.time) {
     console.log('Cleaning message, removing time:', details.time);
-    cleanMessage = cleanMessage.replace(new RegExp(details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
-    cleanMessage = cleanMessage.replace(/,\s*$/, '').trim(); // Remove trailing comma
+    const escapedTime = details.time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleanMessage = cleanMessage.replace(new RegExp(escapedTime, 'gi'), '').trim();
+    cleanMessage = cleanMessage.replace(/^,\s*|,\s*$/g, '').trim(); // Remove leading/trailing commas
+    cleanMessage = cleanMessage.replace(/\s+/g, ' ').trim(); // Normalize spaces
     console.log('Clean message after time removal:', cleanMessage);
   }
 
-  // Improved title extraction patterns - avoid capturing question words
+  // Comprehensive title extraction patterns
   const titlePatterns = [
-    // Explicit title patterns
-    /(?:title|subject|name):\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
-    // Schedule/meeting patterns with explicit title indicators
-    /(?:schedule|create|set up|book)\s+(?:a\s+)?(?:meeting|appointment)\s+(?:for|about|regarding|called|titled)\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
-    // Meeting patterns with explicit title indicators
-    /(?:meeting|appointment)\s+(?:for|about|regarding|called|titled|with)\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i,
-    // Direct title patterns (quoted)
-    /["'](.+?)["'](?:\s+(?:meeting|appointment|at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?/i,
-    // Simple pattern for remaining content after time removal
-    /^(.+?)(?:\s+(?:at|on|for|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*)?$/i
+    // Explicit title indicators with colons
+    /(?:title|subject|name|regarding|about):\s*(.+?)(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    
+    // Meeting scheduling phrases
+    /(?:let'?s\s+meet\s+about|schedule\s+(?:a\s+)?meeting\s+(?:for|about|regarding))\s+(.+?)(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    /(?:set\s+up|create|book)\s+(?:a\s+)?(?:meeting|appointment)\s+(?:for|about|regarding|called|titled)\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    
+    // Meeting title indicators
+    /(?:meeting|appointment|call|session)\s+(?:for|about|regarding|called|titled|on|with)\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    /(?:the\s+meeting\s+(?:will\s+be\s+)?(?:titled|called|about))\s+["']?(.+?)["']?(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    
+    // Discussion and agenda patterns
+    /(?:we\s+(?:will|need\s+to)\s+discuss|let'?s\s+talk\s+about|agenda\s+(?:is|includes?))\s+(.+?)(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    
+    // Direct quoted titles
+    /["'`](.+?)["'`](?:\s+(?:meeting|appointment|at|on|for|today|tomorrow).*)?/i,
+    
+    // Contextual meeting phrases
+    /(?:have\s+(?:a\s+)?(?:meeting|call)\s+(?:about|on|regarding))\s+(.+?)(?:\s+(?:at|on|for|today|tomorrow).*)?$/i,
+    
+    // Simple patterns (fallback) - this should catch "sales meeting" after time removal
+    /^(?:(?:a|the)\s+)?(.+?)(?:\s+(?:meeting|appointment|call|session))?$/i
   ];
 
   // Extract title if not already found
-  if (!details.title) {
-    console.log('Trying title patterns on:', cleanMessage);
-    for (const pattern of titlePatterns) {
-      console.log('Trying pattern:', pattern);
+  if (!details.title && cleanMessage) {
+    console.log('Trying title extraction on:', cleanMessage);
+    
+    for (let i = 0; i < titlePatterns.length; i++) {
+      const pattern = titlePatterns[i];
+      console.log(`Trying pattern ${i + 1}:`, pattern);
       const titleMatch = cleanMessage.match(pattern);
       console.log('Pattern match result:', titleMatch);
       
@@ -320,30 +353,48 @@ function extractMeetingDetails(message: string, state: any) {
         let extractedTitle = titleMatch[1].trim();
         console.log('Raw extracted title:', extractedTitle);
         
-        // Clean up extracted title
-        extractedTitle = extractedTitle.replace(/^(to|my|calendar|on|for)\s+/i, '');
-        extractedTitle = extractedTitle.replace(/\s+(at|on|for|today|tomorrow).*$/i, '');
+        // Enhanced title cleaning
+        extractedTitle = extractedTitle
+          .replace(/^(?:to|my|the|a|an|for|about|regarding|on)\s+/i, '') // Remove common prefixes
+          .replace(/\s+(?:at|on|for|today|tomorrow|this\s+week|next\s+week).*$/i, '') // Remove time suffixes
+          .replace(/[.,;!?]*$/, '') // Remove trailing punctuation
+          .trim();
+        
         console.log('Cleaned extracted title:', extractedTitle);
         
-        if (extractedTitle.length > 1) {
+        // Validate title quality - reject question words and common invalid titles
+        const isValidTitle = extractedTitle.length >= 2 && 
+                           !extractedTitle.match(/^(?:can|could|will|would|should|may|might|do|does|did|is|are|was|were|have|has|had)$/i) &&
+                           !extractedTitle.match(/^(?:you|i|we|they|he|she|it)$/i) &&
+                           !extractedTitle.match(/^(?:book|set|schedule|create)$/i);
+        
+        if (isValidTitle) {
           details.title = extractedTitle;
-          console.log('Found title via pattern:', details.title);
+          console.log('Successfully extracted title:', details.title);
           break;
+        } else {
+          console.log('Rejected title (invalid):', extractedTitle);
         }
       }
     }
   }
 
-  // Use existing title if still missing
+  // Use existing title if still missing and valid
   if (!details.title && existing.title) {
     details.title = existing.title;
     console.log('Using existing title:', details.title);
   }
 
-  // Final validation and cleanup
+  // Final validation and normalization
   if (details.title) {
-    details.title = details.title.replace(/^[^a-zA-Z0-9]*|[^a-zA-Z0-9]*$/g, '').trim();
+    // Clean up any remaining artifacts
+    details.title = details.title
+      .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9.,\s]+$/g, '') // Remove special chars from ends
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+    
     if (details.title.length < 2) {
+      console.log('Title too short, removing:', details.title);
       details.title = null;
     }
   }
