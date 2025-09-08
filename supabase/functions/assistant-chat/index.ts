@@ -284,24 +284,7 @@ function extractMeetingDetails(message: string, state: any) {
     console.log('Potential time section:', `"${cleanTimeSection}"`);
     
     // Step 1: Improved time validation with comprehensive patterns
-    const timeIndicators = /\b(?:
-      # Specific times
-      \d{1,2}(?::\d{2})?\s*(?:am|pm)|
-      # Times with "at"
-      at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)|
-      # Day indicators
-      (?:today|tomorrow|tonight|this\s+(?:morning|afternoon|evening))|
-      # Day names
-      (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|
-      # Relative times
-      (?:this|next)\s+(?:week|month)|
-      # Common time phrases
-      (?:morning|afternoon|evening|night)|
-      # Numeric times without am/pm
-      \d+\s*(?:pm|am)|
-      # Time ranges
-      \d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)
-    )\b/ix;
+    const timeIndicators = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)|(?:today|tomorrow|tonight|this\s+(?:morning|afternoon|evening))|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:this|next)\s+(?:week|month)|(?:morning|afternoon|evening|night)|\d+\s*(?:pm|am)|\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
     
     const hasTimeIndicator = timeIndicators.test(cleanTimeSection);
     console.log('Time indicator analysis:', {
