@@ -193,13 +193,23 @@ serve(async (req) => {
       try {
         const requestText = await req.text();
         console.log('Raw request text:', requestText.length > 0 ? 'Present' : 'Empty');
+        console.log('Request text content:', requestText);
         
         if (!requestText || requestText.trim().length === 0) {
-          throw new Error('Request body is empty');
+          // If no body provided, check if this is a GET request or similar
+          console.log('No request body provided, checking URL params...');
+          const url = new URL(req.url);
+          const action = url.searchParams.get('action');
+          if (action) {
+            body = { action };
+            console.log('Using URL parameters for action:', action);
+          } else {
+            throw new Error('Request body is empty and no action parameter found');
+          }
+        } else {
+          body = JSON.parse(requestText);
+          console.log('Request body parsed successfully:', JSON.stringify(body));
         }
-        
-        body = JSON.parse(requestText);
-        console.log('Request body parsed successfully');
       } catch (parseError) {
         console.error('JSON parse error:', parseError.message);
         return new Response(JSON.stringify({
