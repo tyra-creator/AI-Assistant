@@ -10,13 +10,15 @@ interface OAuthConnectionCardProps {
   isConnected: boolean;
   userInfo?: any;
   onConnectionChange: () => void;
+  needsReconnect?: boolean;
 }
 
 export const OAuthConnectionCard: React.FC<OAuthConnectionCardProps> = ({
   provider,
   isConnected,
   userInfo,
-  onConnectionChange
+  onConnectionChange,
+  needsReconnect = false
 }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
@@ -58,6 +60,16 @@ export const OAuthConnectionCard: React.FC<OAuthConnectionCardProps> = ({
         title: `Connecting to ${config.name}`,
         description: "You'll be redirected to authorize access..."
       });
+      
+      // Set up a listener for when user returns from OAuth
+      const handleAuthReturn = () => {
+        console.log('[OAuth] User returned from OAuth flow, refreshing events...');
+        setTimeout(() => {
+          onConnectionChange();
+        }, 1000);
+      };
+      
+      window.addEventListener('focus', handleAuthReturn, { once: true });
     } catch (error) {
       console.error(`${config.name} OAuth error:`, error);
       toast({
@@ -104,14 +116,30 @@ export const OAuthConnectionCard: React.FC<OAuthConnectionCardProps> = ({
             <div className="text-sm text-muted-foreground">
               Connected as: <span className="font-medium text-foreground">{userInfo.email}</span>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleDisconnect}
-              className="w-full"
-            >
-              Disconnect
-            </Button>
+            {needsReconnect ? (
+              <>
+                <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 p-2 rounded">
+                  ⚠️ Token expired - please reconnect
+                </div>
+                <Button 
+                  onClick={handleConnect}
+                  disabled={isConnecting}
+                  className="w-full"
+                  variant="default"
+                >
+                  {isConnecting ? 'Reconnecting...' : `Reconnect ${config.name}`}
+                </Button>
+              </>
+            ) : (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleDisconnect}
+                className="w-full"
+              >
+                Disconnect
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">

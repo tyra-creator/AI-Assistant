@@ -317,6 +317,27 @@ export class APIService {
         };
       }
 
+      // Check for error in data even with HTTP 200
+      if (data?.error) {
+        const errorText = (data.error || '').toLowerCase();
+        const isAuthError = errorText.includes('expired') || 
+                           errorText.includes('authorization') || 
+                           errorText.includes('connect') ||
+                           errorText.includes('token') ||
+                           errorText.includes('refresh') ||
+                           errorText.includes('invalid');
+        
+        console.log('Error in response data:', { error: data.error, isAuthError });
+        
+        if (isAuthError) {
+          return {
+            events: [],
+            needsAuth: true,
+            error: data.error || 'Please reconnect your calendar account',
+          };
+        }
+      }
+
       // Handle needsAuth responses
       if (data?.needsAuth) {
         console.log('Authentication required response from calendar function');

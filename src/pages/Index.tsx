@@ -89,12 +89,22 @@ const Index = () => {
         );
         console.log('Calendar response:', response);
         
-        if (response.needsAuth) {
-          console.log('Calendar auth required:', response.error);
-          setNotifications([]);
-          setError(response.error || 'Please connect your calendar account to view events');
-          return;
+      if (response.needsAuth) {
+        console.log('Calendar auth required:', response.error);
+        console.log('[Calendar Auth] Token expired or invalid - user needs to reconnect');
+        setNotifications([]);
+        setError(response.error || 'Please connect your calendar account to view events');
+        
+        // Show toast if events are hidden
+        if (isEventsHidden) {
+          toast({
+            title: "Calendar Connection Issue",
+            description: "Click 'Show Events' to reconnect your account",
+            variant: "destructive",
+          });
         }
+        return;
+      }
         
         console.log('Processing calendar events:', response.events?.length || 0);
         const calendarEvents = (response.events || []).map((event) => ({
@@ -318,13 +328,19 @@ const Index = () => {
       console.log('Refresh response:', response);
       
       if (response.needsAuth) {
+        console.log('[Calendar Auth] Token expired or invalid - user needs to reconnect');
         setError(response.error || 'Please connect your calendar account to view events');
         setNotifications([]);
         toast({
           title: "Calendar Connection Required",
-          description: "Please connect your Google or Microsoft account to view calendar events.",
+          description: response.error || "Please reconnect your Google or Microsoft account to view calendar events.",
           variant: "destructive",
         });
+        
+        // Show events panel if hidden
+        if (isEventsHidden) {
+          setIsEventsHidden(false);
+        }
         return;
       }
       const calendarEvents = (response.events || []).map((event) => ({
@@ -429,20 +445,23 @@ const Index = () => {
                   <div className="space-y-4">
                     <div className="text-center py-4 px-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
                       <Calendar className="h-6 w-6 mx-auto mb-2 text-amber-500" />
-                      <p className="text-sm text-amber-800 dark:text-amber-200">{error}</p>
+                      <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-2">{error}</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300">Please reconnect your account below</p>
                     </div>
                     <div className="space-y-3">
                       <OAuthConnectionCard
                         provider="google"
                         isConnected={!!profile?.google_access_token}
                         userInfo={profile?.google_user_info}
-                        onConnectionChange={() => {}}
+                        onConnectionChange={refreshEvents}
+                        needsReconnect={error?.toLowerCase().includes('expired') || error?.toLowerCase().includes('token') || error?.toLowerCase().includes('authorization')}
                       />
                       <OAuthConnectionCard
                         provider="microsoft"
                         isConnected={!!profile?.microsoft_access_token}
                         userInfo={profile?.microsoft_user_info}
-                        onConnectionChange={() => {}}
+                        onConnectionChange={refreshEvents}
+                        needsReconnect={error?.toLowerCase().includes('expired') || error?.toLowerCase().includes('token') || error?.toLowerCase().includes('authorization')}
                       />
                     </div>
                   </div>
