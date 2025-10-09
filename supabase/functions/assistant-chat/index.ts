@@ -808,6 +808,7 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      timeZone: 'Africa/Johannesburg',
       timeZoneName: 'short'
     });
     

@@ -187,6 +187,22 @@ export class ModernTTSService {
   }
 
   /**
+   * Sanitize text for TTS by removing URLs and related phrases
+   */
+  private static sanitizeTextForTTS(text: string): string {
+    // Remove URLs
+    let sanitized = text.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // Remove the introductory phrase for calendar links
+    sanitized = sanitized.replace(/You can view it in your calendar at:/gi, '');
+    
+    // Clean up extra whitespace
+    sanitized = sanitized.replace(/\s+/g, ' ').trim();
+    
+    return sanitized;
+  }
+
+  /**
    * Speak text using enhanced browser TTS
    */
   static async speak(text: string, onEnd?: () => void) {
@@ -196,9 +212,12 @@ export class ModernTTSService {
       return;
     }
 
+    // Sanitize text to remove URLs before speaking
+    const sanitizedText = this.sanitizeTextForTTS(text);
+    
     // Force browser TTS since Edge TTS is currently down
-    console.log('TTS speak called for text:', text.substring(0, 50) + '...');
-    this.speakWithBrowserTTS(text, onEnd);
+    console.log('TTS speak called for text:', sanitizedText.substring(0, 50) + '...');
+    this.speakWithBrowserTTS(sanitizedText, onEnd);
   }
 
   private static async speakWithEdgeTTS(text: string, onEnd?: () => void) {
