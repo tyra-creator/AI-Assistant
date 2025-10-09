@@ -720,7 +720,7 @@ async function handleConfirmation(state: any, authHeader?: string | null) {
       start: startTime,
       end: endTime,
       location: 'TBD',
-      timeZone: 'UTC'
+      timeZone: 'Africa/Johannesburg' // CAT timezone (UTC+2)
     };
     
     const requestBody = {
@@ -1005,37 +1005,39 @@ ReceivedAt: ${new Date(e.received_at).toLocaleString()}`
 }
 
 // Helper function to convert time strings to ISO format with enhanced parsing and timezone support
+// All times are interpreted as CAT (Central Africa Time, UTC+2) by default
 function convertToISODateTime(timeString: string): string {
   console.log('Converting time string:', timeString);
   
   const now = new Date();
   
-  // Detect user's timezone (default to UTC if not specified)
-  let userTimezone = 'UTC';
-  let timezoneOffset = 0;
+  // Default to CAT timezone (UTC+2) - users expect times in their local CAT timezone
+  let userTimezone = 'CAT';
+  let timezoneOffset = 2; // CAT is UTC+2
   
-  // Check for timezone indicators
-  if (timeString.includes('CAT') || timeString.includes('SAST')) {
-    userTimezone = 'CAT';
-    timezoneOffset = 2; // CAT is UTC+2
-  } else if (timeString.includes('EST')) {
+  // Allow override for other timezones if explicitly mentioned
+  if (timeString.includes('EST')) {
     userTimezone = 'EST';
     timezoneOffset = -5; // EST is UTC-5
   } else if (timeString.includes('PST')) {
     userTimezone = 'PST';
     timezoneOffset = -8; // PST is UTC-8
+  } else if (timeString.includes('GMT') || timeString.includes('UTC')) {
+    userTimezone = 'UTC';
+    timezoneOffset = 0; // UTC
   }
   
-  // Get target date - default to today
-  let targetDate = now.toISOString().split('T')[0];
+  // Get target date in CAT timezone (convert current UTC to CAT)
+  const nowInCAT = new Date(now.getTime() + (timezoneOffset * 60 * 60 * 1000));
+  let targetDate = nowInCAT.toISOString().split('T')[0];
   
-  // Handle relative dates
+  // Handle relative dates (in CAT timezone)
   if (timeString.toLowerCase().includes('tomorrow')) {
-    const tomorrow = new Date(now);
+    const tomorrow = new Date(nowInCAT);
     tomorrow.setDate(tomorrow.getDate() + 1);
     targetDate = tomorrow.toISOString().split('T')[0];
   } else if (timeString.toLowerCase().includes('next week')) {
-    const nextWeek = new Date(now);
+    const nextWeek = new Date(nowInCAT);
     nextWeek.setDate(nextWeek.getDate() + 7);
     targetDate = nextWeek.toISOString().split('T')[0];
   }
@@ -1070,6 +1072,7 @@ function convertToISODateTime(timeString: string): string {
   const ampm = timeMatch[3].toLowerCase();
   
   console.log('Parsed time components:', { hour, minute, ampm, userTimezone, timezoneOffset });
+  console.log(`Interpreting time as ${userTimezone} (UTC${timezoneOffset >= 0 ? '+' : ''}${timezoneOffset})`);
   
   // Convert to 24-hour format
   if (ampm === 'pm' && hour !== 12) hour += 12;
