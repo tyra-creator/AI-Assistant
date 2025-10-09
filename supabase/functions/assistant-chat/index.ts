@@ -188,22 +188,133 @@ async function processMessage(message: string, state: any, sessionId: string | n
 }
 
 function isMeetingRequest(message: string): boolean {
-  const meetingKeywords = ['meeting', 'schedule', 'calendar', 'appointment', 'call'];
-  const lowerMessage = message.toLowerCase();
-  return meetingKeywords.some(keyword => lowerMessage.includes(keyword));
+  const lowerMessage = message.toLowerCase().trim();
+  
+  // Don't trigger on simple time responses or confirmations
+  if (/^(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?$/i.test(lowerMessage)) {
+    return false;
+  }
+  if (/^\d{1,2}(?::\d{2})?\s*(?:am|pm)$/i.test(lowerMessage)) {
+    return false;
+  }
+  if (/^(?:yes|no|ok|confirm|cancel|next)$/i.test(lowerMessage)) {
+    return false;
+  }
+  
+  // Must have both meeting keywords AND action words for initial request
+  const meetingKeywords = ['meeting', 'schedule', 'calendar', 'appointment', 'call', 'event'];
+  const actionWords = ['book', 'schedule', 'set up', 'create', 'plan', 'arrange', 'need', 'want', 'have'];
+  
+  const hasMeetingKeyword = meetingKeywords.some(keyword => lowerMessage.includes(keyword));
+  const hasActionWord = actionWords.some(action => lowerMessage.includes(action));
+  
+  console.log('Meeting request detection:', { hasMeetingKeyword, hasActionWord, message: lowerMessage });
+  
+  return hasMeetingKeyword && hasActionWord;
 }
 
 async function handleMeetingFlow(message: string, state: any) {
-  console.log('Extracting meeting details from:', message);
+  console.log('=== MEETING FLOW START ===');
+  console.log('Message:', message);
+  console.log('State:', JSON.stringify(state, null, 2));
   
-  const details = extractMeetingDetails(message, state);
-  console.log('Extracted details:', details);
-
-  // Check if we have both title and time
-  if (details.title && details.time) {
-    // Ready to confirm
+  // Step 1: Initial meeting request - ask for title explicitly
+  if (!state.askedForTitle && !state.partialDetails) {
+    console.log('Initial meeting request - asking for title');
     return {
-      response: `Please confirm meeting details:\nTitle: ${details.title}\nTime: ${details.time}\n\nReply "confirm" to schedule or provide corrections.`,
+      response: "I'll help you schedule a meeting. What would you like to call this meeting?",
+      state: {
+        meetingContext: true,
+        askedForTitle: true,
+        extractionAttempts: 1
+      }
+    };
+  }
+  
+  // Step 2: User provided title response
+  if (state.askedForTitle && !state.partialDetails?.title) {
+    console.log('Processing title response');
+    
+    // Try to extract details (might have title + time in one message)
+    const details = extractMeetingDetails(message, state);
+    console.log('Extracted from title response:', details);
+    
+    // If we got both title and time, go to confirmation
+    if (details.title && details.time) {
+      return {
+        response: `Perfect! Please confirm:\nTitle: ${details.title}\nTime: ${details.time}\n\nReply "confirm" to schedule.`,
+        state: {
+          meetingContext: true,
+          readyToConfirm: true,
+          meetingDetails: details
+        }
+      };
+    }
+    
+    // If we got title but no time, ask for time
+    if (details.title) {
+      return {
+        response: `Great! "${details.title}" it is. When would you like to schedule this meeting?\n\nExamples: "Tomorrow 2pm", "Friday at 10:30am", "Next Monday 3pm"`,
+        state: {
+          meetingContext: true,
+          askedForTime: true,
+          partialDetails: { title: details.title, time: null },
+          extractionAttempts: (state.extractionAttempts || 0) + 1
+        }
+      };
+    }
+    
+    // Couldn't extract valid title - ask again
+    console.log('No valid title extracted, asking again');
+    return {
+      response: "I couldn't get a clear meeting title. Please provide a simple name for the meeting.\n\nExamples: \"Sales review\", \"Team standup\", \"Client call\"",
+      state: {
+        meetingContext: true,
+        askedForTitle: true,
+        extractionAttempts: (state.extractionAttempts || 0) + 1
+      }
+    };
+  }
+  
+  // Step 3: User provided time response
+  if (state.askedForTime && state.partialDetails?.title && !state.partialDetails?.time) {
+    console.log('Processing time response');
+    
+    const details = extractMeetingDetails(message, state);
+    console.log('Extracted from time response:', details);
+    
+    if (details.time) {
+      return {
+        response: `Perfect! Please confirm:\nTitle: ${details.title}\nTime: ${details.time}\n\nReply "confirm" to schedule.`,
+        state: {
+          meetingContext: true,
+          readyToConfirm: true,
+          meetingDetails: details
+        }
+      };
+    }
+    
+    // Couldn't extract valid time - ask again
+    console.log('No valid time extracted, asking again');
+    return {
+      response: "I need a valid date and time. Please provide when you'd like the meeting.\n\nExamples: \"Tomorrow 2pm\", \"Friday 10:30am\", \"Today at 5pm\"",
+      state: {
+        meetingContext: true,
+        askedForTime: true,
+        partialDetails: state.partialDetails,
+        extractionAttempts: (state.extractionAttempts || 0) + 1
+      }
+    };
+  }
+  
+  // Step 4: Fallback - try to extract from any state
+  console.log('Fallback extraction attempt');
+  const details = extractMeetingDetails(message, state);
+  console.log('Fallback extracted:', details);
+  
+  if (details.title && details.time) {
+    return {
+      response: `Please confirm:\nTitle: ${details.title}\nTime: ${details.time}\n\nReply "confirm" to schedule.`,
       state: {
         meetingContext: true,
         readyToConfirm: true,
@@ -211,40 +322,39 @@ async function handleMeetingFlow(message: string, state: any) {
       }
     };
   }
-
-  // Step 5: Enhanced fallback mechanisms with contextual guidance
-  const missing = [];
+  
+  // Still missing something - provide guidance
   const hasTitle = !!details.title;
   const hasTime = !!details.time;
   
-  if (!hasTitle) missing.push('title');
-  if (!hasTime) missing.push('time');
-
-  // Provide contextual examples based on what was successfully extracted
-  let contextualResponse = 'To schedule your meeting, please provide:\n';
-  
-  if (!hasTitle && !hasTime) {
-    // Nothing extracted - provide comprehensive examples
-    contextualResponse += `• Meeting title (e.g., "Sales review", "Team standup", "Client presentation")\n`;
-    contextualResponse += `• Date and time (e.g., "Tomorrow 2pm", "Friday 10:30am", "Next Monday 3-4pm")\n\n`;
-    contextualResponse += `💡 You can also say it naturally like: "Sales meeting, tomorrow 5pm"`;
-  } else if (!hasTitle && hasTime) {
-    // Time extracted but no title
-    contextualResponse += `• Meeting title for ${details.time}\n\n`;
-    contextualResponse += `Examples: "Sales review", "Team standup", "Client call", "Project meeting"`;
-  } else if (hasTitle && !hasTime) {
-    // Title extracted but no time  
-    contextualResponse += `• Date and time for "${details.title}"\n\n`;
-    contextualResponse += `Examples: "Tomorrow 2pm", "Friday 10:30am", "Next Monday 3-4pm", "Today 5pm"`;
+  if (!hasTitle) {
+    return {
+      response: "What would you like to call this meeting?\n\nExamples: \"Sales review\", \"Team standup\", \"Client presentation\"",
+      state: {
+        meetingContext: true,
+        askedForTitle: true,
+        partialDetails: details,
+        extractionAttempts: (state.extractionAttempts || 0) + 1
+      }
+    };
   }
-
+  
+  if (!hasTime) {
+    return {
+      response: `When would you like to schedule "${details.title}"?\n\nExamples: "Tomorrow 2pm", "Friday 10:30am", "Next Monday 3pm"`,
+      state: {
+        meetingContext: true,
+        askedForTime: true,
+        partialDetails: details,
+        extractionAttempts: (state.extractionAttempts || 0) + 1
+      }
+    };
+  }
+  
+  console.log('=== MEETING FLOW END ===');
   return {
-    response: contextualResponse,
-    state: {
-      meetingContext: true,
-      partialDetails: details,
-      extractionAttempts: (state.extractionAttempts || 0) + 1
-    }
+    response: "I'm having trouble understanding. Let's start over. What meeting would you like to schedule?",
+    state: {}
   };
 }
 
@@ -255,6 +365,8 @@ function extractMeetingDetails(message: string, state: any) {
   console.log('=== EXTRACTION START ===');
   console.log('Input message:', message);
   console.log('Existing details:', existing);
+  console.log('Asked for title?', state.askedForTitle);
+  console.log('Asked for time?', state.askedForTime);
   
   // Step 4: Better Message Processing - Enhanced normalization
   let normalizedMessage = message.toLowerCase().trim();
@@ -430,6 +542,29 @@ function extractMeetingDetails(message: string, state: any) {
   if (!details.title && cleanMessage) {
     console.log('Trying title extraction on:', cleanMessage);
     
+    // If we explicitly asked for title, be more lenient - treat whole message as potential title
+    if (state.askedForTitle && !state.partialDetails?.title) {
+      console.log('Processing explicit title response');
+      
+      // Clean up the message more aggressively for title-only responses
+      let potentialTitle = cleanMessage
+        .replace(/^(?:it'?s|the\s+meeting\s+is|call\s+it|name\s+it|title\s+is)\s+/i, '')
+        .replace(/^(?:a\s+|the\s+|an\s+)?(?:meeting\s+(?:for|about|regarding|with|called|named|titled)\s+)?/i, '')
+        .replace(/^(?:book|schedule|set\s+up|create|plan|arrange)\s+(?:a\s+)?(?:meeting\s+(?:for|about|with|called)\s+)?/i, '')
+        .replace(/\s+(?:meeting|appointment|call|session)$/i, '')
+        .replace(/[.,;!?]*$/, '')
+        .trim();
+      
+      console.log('Cleaned title from explicit response:', potentialTitle);
+      
+      // Simple validation for explicit title responses
+      if (potentialTitle.length >= 2 && potentialTitle.length <= 100 && !potentialTitle.match(/^[\s.,!?-]+$/)) {
+        details.title = potentialTitle;
+        console.log('✅ Accepted title from explicit response:', details.title);
+        return details;
+      }
+    }
+    
     for (let i = 0; i < titlePatterns.length; i++) {
       const pattern = titlePatterns[i];
       console.log(`Trying pattern ${i + 1}:`, pattern);
@@ -451,20 +586,23 @@ function extractMeetingDetails(message: string, state: any) {
         
         console.log('Cleaned extracted title:', extractedTitle);
         
-        // Step 2: Improved validation logic - more context-aware
-        const isValidTitle = extractedTitle.length >= 2 && 
-                           // Reject obvious questions/commands at start
-                           !extractedTitle.match(/^(?:can\s+you|could\s+you|will\s+you|would\s+you|should\s+i|may\s+i|might\s+i|please\s+(?:can|could))\s/i) &&
-                           // But allow valid meeting titles that happen to start with common words
-                           !extractedTitle.match(/^(?:you|they|he|she|it)\s/i) &&
-                           // Don't allow just action words
-                           !extractedTitle.match(/^(?:book|set|schedule|create|plan|arrange)$/i) &&
-                           // Don't allow just time/location words  
+        // Step 2: More conservative validation - prevent extracting vague phrases
+        const isValidTitle = extractedTitle.length >= 3 && 
+                           extractedTitle.length <= 100 &&
+                           // Reject obvious questions/commands
+                           !extractedTitle.match(/^(?:can\s+you|could\s+you|will\s+you|would\s+you|help\s+me|should\s+i|may\s+i|might\s+i|please\s+(?:can|could))\s/i) &&
+                           // Reject pronouns at start
+                           !extractedTitle.match(/^(?:you|they|he|she|it|i|we)\s/i) &&
+                           // Don't allow just action words or incomplete phrases
+                           !extractedTitle.match(/^(?:book|set|schedule|create|plan|arrange)\s*(?:a|the|an)?$/i) &&
+                           // Don't allow just time/location words
                            !extractedTitle.match(/^(?:today|tomorrow|at|on|for|with|and|or|but)$/i) &&
                            // Don't allow just time as title
                            !extractedTitle.match(/^\d+\s*(?:am|pm|:\d+)$/i) &&
-                           // Allow common business words that were previously rejected
-                           !extractedTitle.match(/^(?:the|a|an)$/i);
+                           // Don't allow just articles
+                           !extractedTitle.match(/^(?:the|a|an)$/i) &&
+                           // NEW: Reject vague incomplete phrases like "help me book a"
+                           !extractedTitle.match(/^(?:help\s+me|i\s+need|i\s+want)\s+(?:to\s+)?(?:book|schedule|set\s+up|create)\s+a$/i);
         
         console.log('Title validation result:', {
           title: extractedTitle,
