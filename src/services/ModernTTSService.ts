@@ -190,14 +190,19 @@ export class ModernTTSService {
    * Sanitize text for TTS by removing URLs and related phrases
    */
   private static sanitizeTextForTTS(text: string): string {
+    console.log('TTS Original text:', text);
+    
     // Remove URLs
     let sanitized = text.replace(/https?:\/\/[^\s]+/g, '');
+    console.log('TTS After URL removal:', sanitized);
     
     // Remove the introductory phrase for calendar links
     sanitized = sanitized.replace(/You can view it in your calendar at:/gi, '');
+    console.log('TTS After phrase removal:', sanitized);
     
     // Clean up extra whitespace
     sanitized = sanitized.replace(/\s+/g, ' ').trim();
+    console.log('TTS Final sanitized text:', sanitized);
     
     return sanitized;
   }
